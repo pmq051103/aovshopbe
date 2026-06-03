@@ -1,0 +1,1023 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String               @id @default(uuid())
+  username            String               @unique @db.VarChar(50)
+  email               String               @unique @db.VarChar(100)
+  password            String               @db.VarChar(255)
+  displayName         String?              @db.VarChar(100)
+  avatar              String?              @db.Text
+  avatarPublicId      String?              @db.VarChar(255)
+  role                Role                 @default(USER)
+  balance             Decimal              @default(0.00) @db.Decimal(15, 2)
+  totalDeposit        Decimal              @default(0.00) @db.Decimal(15, 2)
+  totalSpent          Decimal              @default(0.00) @db.Decimal(15, 2)
+  isActive            Boolean              @default(true)
+  isBanned            Boolean              @default(false)
+  banReason           String?              @db.Text
+  emailVerified       Boolean              @default(false)
+  verifyToken         String?              @db.VarChar(255)
+  resetToken          String?              @db.VarChar(255)
+  resetTokenExpiry    DateTime?
+  refreshToken        String?              @db.Text
+  googleId            String?              @unique @db.VarChar(255)
+  lastLogin           DateTime?
+  loginCount          Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  quanHuyBalance      Int                  @default(0)
+  deposits            Deposit[]
+  gameAccounts        GameAccount[]
+  gameTopupOrders     GameTopupOrder[]
+  mysteryHistories    MysteryBoxHistory[]
+  notifications       Notification[]
+  orders              Order[]
+  quanHuyTransactions QuanHuyTransaction[]
+  rankings            Ranking[]
+  tickets             Ticket[]
+  transactions        Transaction[]
+  ownedAccounts       UserOwnedAccount[]
+  wheelHistories      WheelHistory[]
+  cardDeposits        CardDeposit[]   @relation("UserCardDeposits")
+  cardPurchases       CardPurchase[]  @relation("UserCardPurchases")
+  mysteryBoxOwned     MysteryBoxAccount[]   @relation("MysteryBoxOwner")
+  mysteryBoxOpened    MysteryBoxOpenHistory[] @relation("MysteryBoxOpenHistory")
+  chatSessions        ChatSession[]
+
+  @@map("users")
+}
+
+model GameAccount {
+  id                String                    @id @default(uuid())
+  code              String                    @unique @db.VarChar(50)
+  title             String                    @db.VarChar(255)
+  description       String?                   @db.Text
+  price             Decimal                   @db.Decimal(15, 2)
+  originalPrice     Decimal?                  @db.Decimal(15, 2)
+  server            String                    @db.VarChar(50)
+  rank              String                    @db.VarChar(50)
+  champions         Int                       @default(0)
+  skins             Int                       @default(0)
+  level             Int                       @default(1)
+  winRate           Decimal?                  @db.Decimal(5, 2)
+  matches           Int                       @default(0)
+  gems              Int                       @default(0)
+  vouchers          Int                       @default(0)
+  status            AccountStatus             @default(AVAILABLE)
+  isVerified        Boolean                   @default(false)
+  isFeatured        Boolean                   @default(false)
+  isNew             Boolean                   @default(false)
+  viewCount         Int                       @default(0)
+  gameUsername      String?                   @db.VarChar(100)
+  gamePassword      String?                   @db.VarChar(100)
+  gameBindEmail     String?                   @db.VarChar(100)
+  gameBindPhone     String?                   @db.VarChar(50)
+  gameBindFacebook  FacebookLinkStatus        @default(NONE)
+  thumbnailUrl      String?                   @db.Text
+  thumbnailId       String?                   @db.VarChar(255)
+  tags              String?                   @db.Text
+  soldAt            DateTime?
+  soldToId          String?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  categoryRelations AccountCategoryRelation[]
+  skins_rel         AccountSkin[]
+  images            GameAccountImage[]
+  soldTo            User?                     @relation(fields: [soldToId], references: [id])
+  transactions      Transaction?
+
+  @@index([status])
+  @@index([rank])
+  @@index([price])
+  @@index([soldToId], map: "game_accounts_soldToId_fkey")
+  @@map("game_accounts")
+}
+
+model GameAccountImage {
+  id        String      @id @default(uuid())
+  accountId String
+  url       String      @db.Text
+  publicId  String      @db.VarChar(255)
+  sortOrder Int         @default(0)
+  createdAt DateTime    @default(now())
+  account   GameAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId], map: "game_account_images_accountId_fkey")
+  @@map("game_account_images")
+}
+
+model Banner {
+  id            String    @id @default(uuid())
+  title         String    @db.VarChar(255)
+  subtitle      String?   @db.VarChar(500)
+  imageUrl      String    @db.Text
+  imagePublicId String?   @db.VarChar(255)
+  mediaType     String    @default("image") @db.VarChar(10)
+  linkUrl       String?   @db.VarChar(500)
+  linkText      String?   @db.VarChar(100)
+  isActive      Boolean   @default(true)
+  sortOrder     Int       @default(0)
+  startDate     DateTime?
+  endDate       DateTime?
+  clickCount    Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("banners")
+}
+
+model LuckyWheel {
+  id          String             @id @default(uuid())
+  name        String             @db.VarChar(255)
+  description String?            @db.Text
+  spinCost    Decimal            @db.Decimal(15, 2)
+  isActive    Boolean            @default(true)
+  imageUrl    String?            @db.Text
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  rewards     LuckyWheelReward[]
+  histories   WheelHistory[]
+
+  @@map("lucky_wheels")
+}
+
+model LuckyWheelReward {
+  id          String         @id @default(uuid())
+  wheelId     String
+  name        String         @db.VarChar(255)
+  description String?        @db.Text
+  type        String         @db.VarChar(50)
+  value       Decimal        @db.Decimal(15, 2)
+  probability Decimal        @db.Decimal(5, 4)
+  rarity      RarityType     @default(COMMON)
+  imageUrl    String?        @db.Text
+  color       String?        @db.VarChar(20)
+  isActive    Boolean        @default(true)
+  sortOrder   Int            @default(0)
+  wonCount    Int            @default(0)
+  rewardAccountId  String?  @db.VarChar(255)  // ID acc game trao thưởng
+  rewardSpinCount  Int?                        // Số lượt quay thưởng
+  couponCode       String?  @db.VarChar(50)   // Mã coupon trao thưởng
+  quanHuyAmount    Int?   
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  wheel       LuckyWheel     @relation(fields: [wheelId], references: [id], onDelete: Cascade)
+  histories   WheelHistory[]
+
+  @@index([wheelId], map: "lucky_wheel_rewards_wheelId_fkey")
+  @@map("lucky_wheel_rewards")
+}
+
+model WheelHistory {
+  id          String           @id @default(uuid())
+  userId      String
+  wheelId     String
+  rewardId    String
+  spinCost    Decimal          @db.Decimal(15, 2)
+  rewardValue Decimal          @db.Decimal(15, 2)
+  rewardName  String           @db.VarChar(255)
+  rarity      RarityType
+  createdAt   DateTime         @default(now())
+  reward      LuckyWheelReward @relation(fields: [rewardId], references: [id])
+  user        User             @relation(fields: [userId], references: [id])
+  wheel       LuckyWheel       @relation(fields: [wheelId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([rewardId], map: "wheel_histories_rewardId_fkey")
+  @@index([wheelId], map: "wheel_histories_wheelId_fkey")
+  @@map("wheel_histories")
+}
+
+model MysteryBox {
+  id            String              @id @default(uuid())
+  name          String              @db.VarChar(255)
+  description   String?             @db.Text
+  price         Decimal             @db.Decimal(15, 2)
+  imageUrl      String?             @db.Text
+  imagePublicId String?             @db.VarChar(255)
+  isActive      Boolean             @default(true)
+  openCount     Int                 @default(0)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  histories     MysteryBoxHistory[]
+  rewards       MysteryBoxReward[]
+
+  @@map("mystery_boxes")
+}
+
+model MysteryBoxReward {
+  id          String              @id @default(uuid())
+  boxId       String
+  name        String              @db.VarChar(255)
+  description String?             @db.Text
+  type        String              @db.VarChar(50)
+  value       Decimal             @db.Decimal(15, 2)
+  probability Decimal             @db.Decimal(5, 4)
+  rarity      RarityType          @default(COMMON)
+  imageUrl    String?             @db.Text
+  isActive    Boolean             @default(true)
+  wonCount    Int                 @default(0)
+  rewardAccountId  String?  @db.VarChar(255)
+  rewardSpinCount  Int?
+  couponCode       String?  @db.VarChar(50)
+  quanHuyAmount    Int?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  histories   MysteryBoxHistory[]
+  box         MysteryBox          @relation(fields: [boxId], references: [id], onDelete: Cascade)
+
+  @@index([boxId], map: "mystery_box_rewards_boxId_fkey")
+  @@map("mystery_box_rewards")
+}
+
+model MysteryBoxHistory {
+  id          String           @id @default(uuid())
+  userId      String
+  boxId       String
+  rewardId    String
+  boxPrice    Decimal          @db.Decimal(15, 2)
+  rewardValue Decimal          @db.Decimal(15, 2)
+  rewardName  String           @db.VarChar(255)
+  rarity      RarityType
+  createdAt   DateTime         @default(now())
+  box         MysteryBox       @relation(fields: [boxId], references: [id])
+  reward      MysteryBoxReward @relation(fields: [rewardId], references: [id])
+  user        User             @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([boxId], map: "mystery_box_histories_boxId_fkey")
+  @@index([rewardId], map: "mystery_box_histories_rewardId_fkey")
+  @@map("mystery_box_histories")
+}
+
+model Deposit {
+  id              String        @id @default(uuid())
+  userId          String
+  amount          Decimal       @db.Decimal(15, 2)
+  bankCode        String?       @db.VarChar(20)
+  accountNumber   String?       @db.VarChar(50)
+  accountName     String?       @db.VarChar(100)
+  transferContent String        @db.VarChar(255)
+  qrCodeUrl       String?       @db.Text
+  status          DepositStatus @default(PENDING)
+  expiredAt       DateTime
+  completedAt     DateTime?
+  webhookData     Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  user            User          @relation(fields: [userId], references: [id])
+  transaction     Transaction?
+
+  @@index([userId])
+  @@index([status])
+  @@index([transferContent])
+  @@map("deposits")
+}
+
+model Transaction {
+  id            String            @id @default(uuid())
+  userId        String
+  type          TransactionType
+  status        TransactionStatus @default(COMPLETED)
+  amount        Decimal           @db.Decimal(15, 2)
+  balanceBefore Decimal           @db.Decimal(15, 2)
+  balanceAfter  Decimal           @db.Decimal(15, 2)
+  description   String?           @db.VarChar(500)
+  referenceId   String?           @db.VarChar(255)
+  gameAccountId String?           @unique
+  depositId     String?           @unique
+  metadata      String?           @db.LongText
+  createdAt     DateTime          @default(now())
+  deposit       Deposit?          @relation(fields: [depositId], references: [id])
+  gameAccount   GameAccount?      @relation(fields: [gameAccountId], references: [id])
+  user          User              @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model Ranking {
+  id            String   @id @default(uuid())
+  userId        String
+  period        String   @db.VarChar(20)
+  periodKey     String   @db.VarChar(50)
+  totalDeposit  Decimal  @default(0.00) @db.Decimal(15, 2)
+  totalSpent    Decimal  @default(0.00) @db.Decimal(15, 2)
+  rank          Int?
+  rewardClaimed Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, periodKey])
+  @@index([periodKey, totalDeposit])
+  @@map("rankings")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String           @db.VarChar(255)
+  message   String           @db.Text
+  data      Json?        
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model SiteConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique @db.VarChar(100)
+  value     String   @db.Text
+  type      String   @default("string") @db.VarChar(20)
+  group     String   @default("general") @db.VarChar(50)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("site_configs")
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  orderCode      String      @unique @db.VarChar(30)
+  userId         String
+  totalAmount    Decimal     @db.Decimal(15, 2)
+  discountAmount Decimal     @default(0.00) @db.Decimal(15, 2)
+  finalAmount    Decimal     @db.Decimal(15, 2)
+  status         OrderStatus @default(PENDING)
+  couponId       String?
+  note           String?     @db.Text
+  refundReason   String?     @db.Text
+  refundedAt     DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  items          OrderItem[]
+  coupon         Coupon?     @relation(fields: [couponId], references: [id])
+  user           User        @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([couponId], map: "orders_couponId_fkey")
+  @@map("orders")
+}
+
+model OrderItem {
+  id                String   @id @default(uuid())
+  orderId           String
+  gameAccountId     String
+  gameAccountCode   String   @db.VarChar(50)
+  gameAccountTitle  String   @db.VarChar(255)
+  gameAccountRank   String   @db.VarChar(50)
+  gameAccountServer String   @db.VarChar(50)
+  price             Decimal  @db.Decimal(15, 2)
+  gameUsername      String?  @db.VarChar(100)
+  gamePassword      String?  @db.VarChar(100)
+  gameBindEmail     String?  @db.VarChar(100)
+  gameBindPhone     String?  @db.VarChar(50)
+  gameBindFacebook FacebookLinkStatus @default(NONE)
+  createdAt         DateTime @default(now())
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId], map: "order_items_orderId_fkey")
+  @@map("order_items")
+}
+
+model Ticket {
+  id              String          @id @default(uuid())
+  ticketCode      String          @unique @db.VarChar(20)
+  userId          String
+  subject         String          @db.VarChar(255)
+  status          TicketStatus    @default(OPEN)
+  priority        TicketPriority  @default(MEDIUM)
+  category        String          @default("general") @db.VarChar(50)
+  assignedTo      String?
+  closedAt        DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  lastAdminReadAt DateTime?
+  messages        TicketMessage[]
+  user            User            @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("tickets")
+}
+
+model TicketMessage {
+  id         String   @id @default(uuid())
+  ticketId   String
+  senderId   String
+  senderRole String   @default("USER") @db.VarChar(10)
+  message    String   @db.Text
+  imageUrl   String?  @db.Text
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("ticket_messages")
+}
+
+model Coupon {
+  id           String        @id @default(uuid())
+  code         String        @unique @db.VarChar(50)
+  name         String        @db.VarChar(255)
+  description  String?       @db.Text
+  type         CouponType
+  value        Decimal       @db.Decimal(15, 2)
+  minPurchase  Decimal       @default(0.00) @db.Decimal(15, 2)
+  maxDiscount  Decimal?      @db.Decimal(15, 2)
+  usageLimit   Int           @default(1)
+  usageCount   Int           @default(0)
+  perUserLimit Int           @default(1)
+  isActive     Boolean       @default(true)
+  startDate    DateTime?
+  endDate      DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  usages       CouponUsage[]
+  orders       Order[]
+
+  @@map("coupons")
+}
+
+model CouponUsage {
+  id       String   @id @default(uuid())
+  couponId String
+  userId   String
+  orderId  String?
+  usedAt   DateTime @default(now())
+  coupon   Coupon   @relation(fields: [couponId], references: [id])
+
+  @@unique([couponId, userId])
+  @@map("coupon_usages")
+}
+
+model AuditLog {
+  id          String      @id @default(uuid())
+  adminId     String
+  adminName   String      @db.VarChar(100)
+  action      AuditAction
+  targetType  String      @db.VarChar(50)
+  targetId    String?     @db.VarChar(255)
+  description String      @db.Text
+  ipAddress   String?     @db.VarChar(50)
+  userAgent   String?     @db.Text
+  metadata    String?     @db.LongText
+  createdAt   DateTime    @default(now())
+
+  @@index([adminId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model UserOwnedAccount {
+  id           String             @id @default(uuid())
+  userId       String
+  accountId    String?            @db.VarChar(255)
+  sourceType   OwnedAccountSource
+  sourceId     String?            @db.VarChar(255)
+  receivedAt   DateTime           @default(now())
+  snapshotData String             @db.LongText
+  user         User               @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([sourceType])
+  @@map("user_owned_accounts")
+}
+
+model AccountCategory {
+  id            String                    @id @default(uuid())
+  name          String                    @db.VarChar(100)
+  slug          String                    @unique @db.VarChar(100)
+  description   String?                   @db.Text
+  icon          String?                   @db.VarChar(10)
+  imageUrl      String?                   @db.Text
+  imagePublicId String?                   @db.VarChar(255)
+  isActive      Boolean                   @default(true)
+  sortOrder     Int                       @default(0)
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  accounts      AccountCategoryRelation[]
+
+  @@map("account_categories")
+}
+
+model AccountCategoryRelation {
+  id         String          @id @default(uuid())
+  accountId  String
+  categoryId String
+  account    GameAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category   AccountCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, categoryId])
+  @@index([accountId])
+  @@index([categoryId])
+  @@map("account_category_relations")
+}
+
+model AccountSkin {
+  id        String      @id @default(uuid())
+  accountId String
+  skinName  String      @db.VarChar(100)
+  heroName  String?     @db.VarChar(100)
+  tier      String?     @db.VarChar(50)
+  createdAt DateTime    @default(now())
+  account   GameAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([skinName])
+  @@map("account_skins")
+}
+
+model TopupPackage {
+  id            String           @id @default(uuid())
+  name          String           @db.VarChar(255)
+  description   String?          @db.Text
+  imageUrl      String?          @db.Text
+  imagePublicId String?          @db.VarChar(255)
+  quanHuyAmount Int
+  bonusQuanHuy  Int              @default(0)
+  price         Decimal          @db.Decimal(15, 2)
+  isActive      Boolean          @default(true)
+  sortOrder     Int              @default(0)
+  isBestValue   Boolean          @default(false)
+  isPopular     Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  orders        GameTopupOrder[]
+
+  @@map("topup_packages")
+}
+
+model GameTopupOrder {
+  id            String           @id @default(uuid())
+  orderCode     String           @unique @db.VarChar(30)
+  userId        String
+  packageId     String
+  gamePlayerId  String           @db.VarChar(100)
+  gameServer    String?          @db.VarChar(100)
+  note          String?          @db.Text
+  status        TopupOrderStatus @default(PENDING)
+  quanHuyCost   Int
+  adminNote     String?          @db.Text
+  processedBy   String?          @db.VarChar(255)
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  paymentMethod CurrencyType     @default(MONEY)
+  pricePaid     Decimal?         @db.Decimal(15, 2)
+  quanHuyPaid   Int              @default(0)
+  package       TopupPackage     @relation(fields: [packageId], references: [id])
+  user          User             @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([packageId], map: "game_topup_orders_packageId_fkey")
+  @@map("game_topup_orders")
+}
+
+model QuanHuyTransaction {
+  id            String   @id @default(uuid())
+  userId        String
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  type          String   @db.VarChar(50)
+  description   String?  @db.VarChar(500)
+  referenceId   String?  @db.VarChar(255)
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("quan_huy_transactions")
+}
+
+model News {
+  id           String    @id @default(uuid())
+  title        String    @db.VarChar(255)
+  slug         String    @unique @db.VarChar(300)
+  summary      String    @db.Text
+  content      String    @db.LongText
+  thumbnailUrl String?   @db.Text
+  thumbnailId  String?   @db.VarChar(255)
+  tags         String?   @db.VarChar(500)
+  isPublished  Boolean   @default(false)
+  publishedAt  DateTime?
+  viewCount    Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([isPublished, publishedAt])
+  @@index([slug])
+  @@map("news")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum AccountStatus {
+  AVAILABLE
+  SOLD
+  HIDDEN
+}
+
+enum FacebookLinkStatus {
+  LIVE
+  NONE
+  RIP
+}
+
+enum TransactionType {
+  DEPOSIT
+  PURCHASE
+  SPIN
+  MYSTERY_BOX
+  REWARD
+  REFUND
+  TOPUP_PURCHASE
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum DepositStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+enum RarityType {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+  MYTHIC
+}
+
+enum NotificationType {
+  SYSTEM
+  PURCHASE
+  DEPOSIT
+  REWARD
+  SPIN
+  MYSTERY_BOX
+  ANNOUNCEMENT
+  REFUND
+}
+
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  REFUNDED
+  DISPUTED
+  CANCELLED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum CouponType {
+  PERCENT
+  FIXED
+  FREE_SPIN
+  CASHBACK
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  BAN
+  UNBAN
+  DEPOSIT_CONFIRM
+  REFUND
+  BULK_IMPORT
+}
+
+enum OwnedAccountSource {
+  PURCHASED
+  MYSTERY_BOX
+  LUCKY_WHEEL
+  GIFTED
+}
+
+enum TopupOrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
+enum CurrencyType {
+  MONEY
+  QUAN_HUY
+}
+
+// ══════════════════════════════════════════════
+// MYSTERY BOX CATEGORY SYSTEM (NEW)
+// ══════════════════════════════════════════════
+
+model MysteryBoxCategory {
+  id              String               @id @default(uuid())
+  name            String               @db.VarChar(255)
+  slug            String               @unique @db.VarChar(255)
+  description     String?              @db.LongText
+  thumbnail       String?              @db.Text
+  thumbnailId     String?              @db.VarChar(255)
+  bannerImage     String?              @db.Text
+  bannerImageId   String?              @db.VarChar(255)
+  detailImage     String?              @db.Text
+  detailImageId   String?              @db.VarChar(255)
+  price           Decimal              @db.Decimal(15, 2)
+  rarity          RarityType           @default(COMMON)
+  isActive        Boolean              @default(true)
+  sortOrder       Int                  @default(0)
+  totalAccounts   Int                  @default(0)
+  soldCount       Int                  @default(0)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  accounts        MysteryBoxAccount[]
+  openHistories   MysteryBoxOpenHistory[]
+
+  @@index([slug])
+  @@index([isActive])
+  @@map("mystery_box_categories")
+}
+
+model MysteryBoxAccount {
+  id             String               @id @default(uuid())
+  categoryId     String
+  code String? @unique @db.VarChar(20)
+  gameUsername   String?              @db.VarChar(100)
+  gamePassword   String?              @db.VarChar(100)
+  gameBindInfo   String?              @db.VarChar(255)
+  status         MysteryAccountStatus @default(AVAILABLE)
+  rarity         RarityType           @default(COMMON)
+  isSold         Boolean              @default(false)
+  soldAt         DateTime?
+  ownerId        String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  category       MysteryBoxCategory   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  owner          User?                @relation("MysteryBoxOwner", fields: [ownerId], references: [id])
+  openHistories  MysteryBoxOpenHistory[]
+
+  @@index([categoryId])
+  @@index([isSold])
+  @@index([rarity])
+  @@index([ownerId])
+  @@map("mystery_box_accounts")
+}
+
+model MysteryBoxOpenHistory {
+  id          String              @id @default(uuid())
+  userId      String
+  categoryId  String
+  accountId   String
+  pricePaid   Decimal             @db.Decimal(15, 2)
+  rarity      RarityType
+  createdAt   DateTime            @default(now())
+  user        User                @relation("MysteryBoxOpenHistory", fields: [userId], references: [id])
+  category    MysteryBoxCategory  @relation(fields: [categoryId], references: [id])
+  account     MysteryBoxAccount   @relation(fields: [accountId], references: [id])
+
+  @@index([userId])
+  @@index([categoryId])
+  @@index([createdAt])
+  @@map("mystery_box_open_histories")
+}
+
+enum MysteryAccountStatus {
+  AVAILABLE
+  SOLD
+  RESERVED
+}
+
+model Announcement {
+  id        String   @id @default(uuid())
+  title     String   @db.VarChar(255)
+  content   String   @db.LongText
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  startAt   DateTime?
+  endAt     DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("announcements")
+}
+
+// ── THẺ CÀO - CẤU HÌNH ADMIN ────────────────────────────────────────────────
+
+// Cấu hình từng loại thẻ (telco + mệnh giá) do admin quản lý
+model CardConfig {
+  id               String   @id @default(uuid())
+  telco            String   @db.VarChar(50)    // VIETTEL, VINAPHONE, ZING, GATE, GARENA ...
+  telcoLabel       String?  @db.VarChar(100)   // Tên hiển thị: "Viettel", "Zing Card", "Garena Shell"
+  denomination     Decimal  @db.Decimal(15, 2) // mệnh giá (10000, 50000 ...)
+  // Thumbnail gắn theo TELCO (nhóm), không phải từng mệnh giá
+  thumbnailUrl     String?  @db.Text           // ảnh đại diện của nhóm telco
+  thumbnailPublicId String? @db.VarChar(255)
+  // Cài đặt NẠP THẺ
+  depositEnabled   Boolean  @default(true)     // cho phép nạp loại thẻ này không
+  depositDiscount  Decimal  @db.Decimal(5, 2)  // chiết khấu nạp % (vd: 27.00 = 27%)
+  // Cài đặt MUA THẺ
+  buyEnabled       Boolean  @default(true)     // cho phép mua loại thẻ này không
+  buyDiscount      Decimal  @db.Decimal(5, 2)  // chiết khấu mua % (vd: 10.00 = 10%)
+  //   giá user trả = denomination * (1 - buyDiscount/100)
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  deposits  CardDeposit[]
+
+  @@unique([telco, denomination])
+  @@index([telco])
+  @@index([depositEnabled])
+  @@index([buyEnabled])
+  purchases        CardPurchase[]
+  @@map("card_configs")
+}
+
+model CardDeposit {
+  id             String            @id @default(uuid())
+  userId         String
+  cardConfigId   String?           // liên kết cấu hình tại thời điểm nạp
+  requestId      String            @unique @db.VarChar(100)
+  telco          String            @db.VarChar(30)
+  code           String            @db.VarChar(100)
+  serial         String            @db.VarChar(100)
+  declaredAmount Decimal           @db.Decimal(15, 2) // mệnh giá user khai báo
+  depositDiscount Decimal          @db.Decimal(5, 2)  // % chiết khấu tại thời điểm nạp
+  realAmount     Decimal?          @db.Decimal(15, 2) // mệnh giá thực tế đối tác xác nhận
+  receivedAmount Decimal?          @db.Decimal(15, 2) // tiền thực user nhận được
+  status         CardDepositStatus @default(PENDING)
+  transId        String?           @db.VarChar(100)
+  message        String?           @db.VarChar(500)
+  callbackData   Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  user           User              @relation("UserCardDeposits", fields: [userId], references: [id])
+  cardConfig  CardConfig?  @relation(fields: [cardConfigId], references: [id])
+
+  @@index([userId])
+  @@index([requestId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("card_deposits")
+}
+
+model CardPurchase {
+  id            String             @id @default(uuid())
+  userId        String
+  cardConfigId  String             // cấu hình đã dùng
+  telco         String             @db.VarChar(30)
+  denomination  Decimal            @db.Decimal(15, 2)
+  buyDiscount   Decimal            @db.Decimal(5, 2)  // % chiết khấu tại thời điểm mua
+  unitPrice     Decimal            @db.Decimal(15, 2) // giá 1 thẻ user trả
+  quantity      Int                @default(1)
+  totalPrice    Decimal            @db.Decimal(15, 2)
+  status        CardPurchaseStatus @default(PENDING)
+  cards         Json?              // [{serial, pin/code, expireDate}]
+  providerData  Json?
+  requestId     String             @unique @db.VarChar(100)
+  message       String?            @db.VarChar(500)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  user          User               @relation("UserCardPurchases", fields: [userId], references: [id])
+  cardConfig    CardConfig?        @relation(fields: [cardConfigId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("card_purchases")
+}
+
+enum CardDepositStatus {
+  PENDING
+  SUCCESS
+  WRONG_VALUE
+  FAILED
+}
+
+enum CardPurchaseStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+// ══════════════════════════════════════════════
+// AI KNOWLEDGE BASE (RAG + Pinecone)
+// ══════════════════════════════════════════════
+
+model AiKnowledge {
+  id        String    @id @default(uuid())
+  title     String    @db.VarChar(255)
+  // FAQ = Câu hỏi thường gặp | POLICY = Chính sách | GUIDE = Hướng dẫn | TERM = Điều khoản
+  type      AiKnowledgeType
+  content   String    @db.Text
+  isActive  Boolean   @default(true)
+
+  // ID document trên Pinecone — dùng chính id của record này cho dễ quản lý
+  vectorId  String?   @db.VarChar(255)
+
+  // Thời điểm record đã được sync sang Pinecone gần nhất
+  syncedAt  DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([type])
+  @@index([isActive])
+  @@index([syncedAt])
+  @@map("ai_knowledge")
+}
+
+enum AiKnowledgeType {
+  FAQ
+  POLICY
+  GUIDE
+  TERM
+}
+
+// ══════════════════════════════════════════════
+// CHAT SESSION & MEMORY (AI Assistant)
+// ══════════════════════════════════════════════
+
+model ChatSession {
+  id        String        @id @default(uuid())
+  userId    String
+  title     String?       @db.VarChar(255)
+  // Tóm tắt ngắn context session để inject vào prompt (memory summary)
+  summary   String?       @db.Text
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+
+  @@index([userId])
+  @@index([updatedAt])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        String      @id @default(uuid())
+  sessionId String
+  // "user" | "assistant" | "tool"
+  role      String      @db.VarChar(20)
+  content   String      @db.LongText
+  // Metadata JSON: tool_calls, tool_results, ragContext count, intent...
+  metadata  String?     @db.LongText
+  createdAt DateTime    @default(now())
+
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([createdAt])
+  @@map("chat_messages")
+}
