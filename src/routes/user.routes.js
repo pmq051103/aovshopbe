@@ -23,12 +23,24 @@ router.put('/profile', protect, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false }); }
 });
 
-router.post('/avatar', protect, uploadAvatar.single('avatar'), async (req, res) => {
+router.post('/avatar', protect, (req, res, next) => {
+  uploadAvatar.single('avatar')(req, res, (err) => {
+    if (err) {
+      console.error('[Avatar Upload] Multer/Cloudinary error:', err.message, err);
+      return res.status(500).json({ success: false, message: err.message || 'Upload thất bại' });
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'Không có file' });
+    console.log('[Avatar Upload] file:', req.file.path, req.file.filename);
     const user = await prisma.user.update({ where: { id: req.user.id }, data: { avatar: req.file.path, avatarPublicId: req.file.filename } });
     res.json({ success: true, data: { avatar: user.avatar } });
-  } catch (e) { res.status(500).json({ success: false }); }
+  } catch (e) {
+    console.error('[Avatar Upload] DB error:', e.message);
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 router.put('/change-password', protect, async (req, res) => {
