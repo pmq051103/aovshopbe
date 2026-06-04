@@ -5,16 +5,25 @@ let transporter = null
 
 const getTransporter = () => {
   if (!transporter) {
+    const smtpPort = Number(process.env.SMTP_PORT || 465)
+
     transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_PORT === '465',
+      port: smtpPort,
+      secure: smtpPort === 465,
+
+      // chống treo request trên Render
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
+
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
     })
   }
+
   return transporter
 }
 
@@ -24,7 +33,9 @@ const sendMail = async ({ to, subject, html, text }) => {
       logger.warn('Email not configured — skipping send')
       return false
     }
+
     const t = getTransporter()
+
     await t.sendMail({
       from: process.env.SMTP_FROM || `"AOV Shop" <${process.env.SMTP_USER}>`,
       to,
@@ -32,10 +43,17 @@ const sendMail = async ({ to, subject, html, text }) => {
       html,
       text,
     })
+
     logger.info(`Email sent to ${to}: ${subject}`)
     return true
   } catch (err) {
-    logger.error('Email send error:', err.message)
+    logger.error('Email send error:', {
+      message: err.message,
+      code: err.code,
+      command: err.command,
+      response: err.response,
+      responseCode: err.responseCode,
+    })
     return false
   }
 }
