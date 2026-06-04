@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const prisma = require('../config/prisma')
-const nodemailer = require('nodemailer');
+const { sendResetPasswordEmail } = require('../config/email')
 
 const generateTokens = (userId, role) => {
   const accessToken = jwt.sign({ id: userId, role }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '15m' });
@@ -104,115 +104,58 @@ const getMe = async (req, res) => {
 
 const forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email } = req.body
 
     const user = await prisma.user.findUnique({
-      where: { email }
-    });
+      where: { email },
+    })
 
-    // Không tiết lộ email tồn tại hay không
     if (!user) {
       return res.json({
         success: true,
-        message: 'Nếu email tồn tại, bạn sẽ nhận được link đặt lại mật khẩu'
-      });
+        message: 'Nếu email tồn tại, bạn sẽ nhận được link đặt lại mật khẩu',
+      })
     }
 
-    // Tạo token reset
-    const resetToken = uuidv4();
+    const resetToken = uuidv4()
+    const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000)
 
-    // Hết hạn sau 1 giờ
-    const resetTokenExpiry = new Date(Date.now() + 3600000);
-
-    // Lưu token vào DB
     await prisma.user.update({
       where: { id: user.id },
       data: {
         resetToken,
-        resetTokenExpiry
-      }
-    });
+        resetTokenExpiry,
+      },
+    })
 
-    // Link reset password
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`
 
-    // Nodemailer
-    const nodemailer = require('nodemailer');
+    const sent = await sendResetPasswordEmail({
+      user,
+      resetUrl,
+    })
 
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-      }
-    });
-
-    // Gửi mail
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM,
-      to: user.email,
-      subject: 'Đặt lại mật khẩu AOV Shop',
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2>Đặt lại mật khẩu</h2>
-
-          <p>Xin chào ${user.displayName || user.username},</p>
-
-          <p>Bạn vừa yêu cầu đặt lại mật khẩu cho tài khoản AOV Shop.</p>
-
-          <p>Nhấn vào nút bên dưới để đặt lại mật khẩu:</p>
-
-          <a 
-            href="${resetUrl}" 
-            style="
-              display:inline-block;
-              padding:12px 24px;
-              background:#ff4d6d;
-              color:white;
-              text-decoration:none;
-              border-radius:8px;
-              margin:16px 0;
-            "
-          >
-            Đặt lại mật khẩu
-          </a>
-
-          <p>Hoặc mở link này:</p>
-
-          <p>
-            <a href="${resetUrl}">
-              ${resetUrl}
-            </a>
-          </p>
-
-          <p>Link sẽ hết hạn sau 1 giờ.</p>
-
-          <p>Nếu bạn không yêu cầu đổi mật khẩu, hãy bỏ qua email này.</p>
-
-          <hr />
-
-          <p>AOV Shop</p>
-        </div>
-      `
-    });
+    if (!sent) {
+      return res.status(500).json({
+        success: false,
+        message: 'Không gửi được email đặt lại mật khẩu',
+      })
+    }
 
     res.json({
       success: true,
-      message: 'Link đặt lại mật khẩu đã được gửi'
-    });
-
+      message: 'Link đặt lại mật khẩu đã được gửi',
+    })
   } catch (error) {
-    console.log('Forgot password error:', error);
+    console.log('Forgot password error:', error)
 
     res.status(500).json({
       success: false,
       message: 'Lỗi gửi email',
-      error: error.message
-    });
+      error: error.message,
+    })
   }
-};
+}
 
 const resetPassword = async (req, res) => {
   try {
