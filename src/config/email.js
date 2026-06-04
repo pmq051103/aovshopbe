@@ -26,7 +26,7 @@ const sendMail = async ({ to, subject, html, text }) => {
     }
     const t = getTransporter()
     await t.sendMail({
-      from: `"LQ Shop" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+      from: process.env.SMTP_FROM || `"AOV Shop" <${process.env.SMTP_USER}>`,
       to,
       subject,
       html,
