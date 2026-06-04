@@ -28,10 +28,17 @@ const getSiteLogo = async () => {
 
 const getTransporter = () => {
   if (!transporter) {
+    const smtpPort = Number(process.env.SMTP_PORT || 465)
+
     transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: String(process.env.SMTP_PORT) === '465',
+      port: smtpPort,
+      secure: smtpPort === 465,
+
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
+
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
@@ -49,8 +56,10 @@ const sendMail = async ({ to, subject, html, text }) => {
       return false
     }
 
-    await getTransporter().sendMail({
-      from: `"LQ Shop" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+    const t = getTransporter()
+
+    await t.sendMail({
+      from: process.env.SMTP_FROM || `"AOV Shop" <${process.env.SMTP_USER}>`,
       to,
       subject,
       html,
@@ -60,7 +69,13 @@ const sendMail = async ({ to, subject, html, text }) => {
     logger.info(`Email sent to ${to}: ${subject}`)
     return true
   } catch (err) {
-    logger.error('Email send error:', err.message)
+    logger.error('Email send error:', {
+      message: err.message,
+      code: err.code,
+      command: err.command,
+      response: err.response,
+      responseCode: err.responseCode,
+    })
     return false
   }
 }
@@ -80,24 +95,21 @@ const baseEmail = ({ logo, title, subtitle, badge, content, footerText }) => `
     <div style="max-width:720px;margin:0 auto;background:#ffffff;border:1px solid #e8eaf3;border-radius:22px;overflow:hidden;box-shadow:0 18px 50px rgba(20,25,40,.08);">
       
       <div style="background:linear-gradient(135deg,#fff1f7 0%,#f7edff 55%,#eef5ff 100%);padding:42px 36px 32px;text-align:center;">
-        ${
-          logo
-            ? `<img src="${logo}" alt="AOV Shop" width="150" style="display:block;margin:0 auto 24px;width:150px;max-width:150px;height:auto;border:0;outline:none;" />`
-            : ''
-        }
+        ${logo
+    ? `<img src="${logo}" alt="AOV Shop" width="150" style="display:block;margin:0 auto 24px;width:150px;max-width:150px;height:auto;border:0;outline:none;" />`
+    : ''
+  }
         <h1 style="margin:0;font-size:30px;line-height:1.25;font-weight:900;letter-spacing:.5px;color:#172033;">
           ${title}
         </h1>
-        ${
-          subtitle
-            ? `<p style="margin:18px auto 0;max-width:540px;font-size:15px;line-height:1.7;color:#69758c;">${subtitle}</p>`
-            : ''
-        }
-        ${
-          badge
-            ? `<div style="display:inline-block;margin-top:22px;padding:10px 22px;border-radius:999px;background:#fff8ec;border:1px solid #ffd59a;color:#d78111;font-size:14px;font-weight:800;">${badge}</div>`
-            : ''
-        }
+        ${subtitle
+    ? `<p style="margin:18px auto 0;max-width:540px;font-size:15px;line-height:1.7;color:#69758c;">${subtitle}</p>`
+    : ''
+  }
+        ${badge
+    ? `<div style="display:inline-block;margin-top:22px;padding:10px 22px;border-radius:999px;background:#fff8ec;border:1px solid #ffd59a;color:#d78111;font-size:14px;font-weight:800;">${badge}</div>`
+    : ''
+  }
       </div>
 
       <div style="padding:34px 38px 36px;">
@@ -151,16 +163,16 @@ const notifyAdminTopupOrder = async ({ order, user, pkg }) => {
     </p>
 
     ${infoCard([
-      { icon: '📄', label: 'Mã đơn', value: `#${order.orderCode}`, color: '#ec2f75', bg: '#fff0f6' },
-      { icon: '👤', label: 'Người dùng', value: user.displayName || user.username, bg: '#f4f0ff' },
-      { icon: '✉️', label: 'Email', value: user.email || 'Không có', color: '#1976d2', bg: '#edf6ff' },
-      { icon: '🎁', label: 'Gói nạp', value: pkg.name, bg: '#f0fff8' },
-      { icon: '⚔️', label: 'Quân Huy', value: totalQH.toLocaleString('vi-VN'), color: '#7c3aed', bg: '#f4f0ff' },
-      { icon: '💰', label: 'Chi phí', value: formatMoney(pkg.price), color: '#ec2f75', bg: '#fff3ea' },
-      { icon: '🎮', label: 'ID Game', value: order.gamePlayerId, bg: '#eef9ff' },
-      { icon: '🗄️', label: 'Server', value: order.gameServer || 'Không có', bg: '#f3f6fb' },
-      { icon: '📝', label: 'Ghi chú của user', value: order.note || 'Không có ghi chú', bg: '#f8fafc' },
-    ])}
+    { icon: '📄', label: 'Mã đơn', value: `#${order.orderCode}`, color: '#ec2f75', bg: '#fff0f6' },
+    { icon: '👤', label: 'Người dùng', value: user.displayName || user.username, bg: '#f4f0ff' },
+    { icon: '✉️', label: 'Email', value: user.email || 'Không có', color: '#1976d2', bg: '#edf6ff' },
+    { icon: '🎁', label: 'Gói nạp', value: pkg.name, bg: '#f0fff8' },
+    { icon: '⚔️', label: 'Quân Huy', value: totalQH.toLocaleString('vi-VN'), color: '#7c3aed', bg: '#f4f0ff' },
+    { icon: '💰', label: 'Chi phí', value: formatMoney(pkg.price), color: '#ec2f75', bg: '#fff3ea' },
+    { icon: '🎮', label: 'ID Game', value: order.gamePlayerId, bg: '#eef9ff' },
+    { icon: '🗄️', label: 'Server', value: order.gameServer || 'Không có', bg: '#f3f6fb' },
+    { icon: '📝', label: 'Ghi chú của user', value: order.note || 'Không có ghi chú', bg: '#f8fafc' },
+  ])}
 
     <a href="${adminUrl}" style="display:block;margin-top:28px;padding:18px 24px;border-radius:14px;background:linear-gradient(135deg,#ec2f75,#7c3aed);color:#ffffff;text-decoration:none;text-align:center;font-size:16px;font-weight:900;letter-spacing:.3px;">
       → Vào Admin để xử lý ngay
@@ -204,11 +216,11 @@ const notifyUserTopupCompleted = async ({ order, user, pkg, totalQuanHuy }) => {
     </div>
 
     ${infoCard([
-      { icon: '📄', label: 'Mã đơn', value: `#${order.orderCode}`, color: '#7c3aed', bg: '#f4f0ff' },
-      { icon: '🎁', label: 'Gói nạp', value: pkg.name, bg: '#f0fff8' },
-      { icon: '⚔️', label: 'Quân Huy nhận', value: totalQuanHuy.toLocaleString('vi-VN'), color: '#7c3aed', bg: '#f4f0ff' },
-      { icon: '🎮', label: 'ID Game', value: order.gamePlayerId, bg: '#eef9ff' },
-    ])}
+    { icon: '📄', label: 'Mã đơn', value: `#${order.orderCode}`, color: '#7c3aed', bg: '#f4f0ff' },
+    { icon: '🎁', label: 'Gói nạp', value: pkg.name, bg: '#f0fff8' },
+    { icon: '⚔️', label: 'Quân Huy nhận', value: totalQuanHuy.toLocaleString('vi-VN'), color: '#7c3aed', bg: '#f4f0ff' },
+    { icon: '🎮', label: 'ID Game', value: order.gamePlayerId, bg: '#eef9ff' },
+  ])}
 
     <div style="margin-top:24px;padding:18px 20px;border-radius:14px;background:#ecfdf3;border:1px solid #bbf7d0;color:#166534;font-size:14px;line-height:1.7;text-align:center;">
       ✅ Quân Huy đã được cộng vào tài khoản của bạn.
