@@ -42,18 +42,18 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
+ 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !await bcrypt.compare(password, user.password)) {
       return res.status(401).json({ success: false, message: 'Email hoặc mật khẩu không đúng' });
     }
     if (user.isBanned) return res.status(403).json({ success: false, message: `Tài khoản bị khóa: ${user.banReason}` });
     if (!user.isActive) return res.status(401).json({ success: false, message: 'Tài khoản không hoạt động' });
-
+ 
     const { accessToken, refreshToken } = generateTokens(user.id, user.role);
     await prisma.user.update({ where: { id: user.id }, data: { refreshToken, lastLogin: new Date(), loginCount: { increment: 1 } } });
-
-    const userData = { id: user.id, username: user.username, email: user.email, displayName: user.displayName, avatar: user.avatar, role: user.role, balance: user.balance, quanHuyBalance: user.quanHuyBalance };
+ 
+    const userData = { id: user.id, username: user.username, email: user.email, displayName: user.displayName, avatar: user.avatar, role: user.role, balance: user.balance, quanHuyBalance: user.quanHuyBalance, createdAt: user.createdAt, totalDeposit: user.totalDeposit, totalSpent: user.totalSpent };
     res.json({ success: true, message: 'Đăng nhập thành công', data: { user: userData, accessToken, refreshToken } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi đăng nhập' });
