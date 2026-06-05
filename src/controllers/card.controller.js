@@ -3,6 +3,7 @@ const axios = require('axios')
 const prisma = require('../config/prisma')
 const { deleteImage } = require('../config/cloudinary')
 const { emitToUser, emitToAdmins } = require('../config/socket')
+const { notifyUserCardPurchase } = require('../config/email')
 
 // ── CHARGING: User nạp thẻ vào số dư ─────────────────────────────
 const GT_URL = process.env.CARD_CHARGING_URL || 'https://thesieure.com/chargingws/v2'
@@ -337,6 +338,7 @@ const adminGetDeposits = async (req, res) => {
               username: true,
               displayName: true,
               avatar: true,
+              email: true,
             },
           },
         },
@@ -380,6 +382,7 @@ const adminGetPurchases = async (req, res) => {
             select: {
               username: true,
               displayName: true,
+              email: true,
             },
           },
           cardConfig: {
@@ -1238,6 +1241,19 @@ const buyCard = async (req, res) => {
           },
         },
       })
+
+      // Gửi email thông báo mua thẻ thành công
+      const buyer = await prisma.user.findUnique({ where: { id: req.user.id }, select: { email: true, displayName: true, username: true } })
+      if (buyer?.email) {
+        notifyUserCardPurchase({
+          user: buyer,
+          cards: cards || [],
+          telco: config.telcoLabel || config.telco,
+          denomination: denom,
+          quantity: qty,
+          totalPrice,
+        }).catch(e => console.error('[Email card] error:', e.message))
+      }
 
       const latestUser = await prisma.user.findUnique({
         where: { id: req.user.id },
