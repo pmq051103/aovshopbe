@@ -19,32 +19,44 @@ const getSiteLogo = async () => {
 
 const sendMail = async ({ to, subject, html, text }) => {
   try {
-    const apiKey = process.env.RESEND_API_KEY || process.env.SMTP_PASS
+    const apiKey = process.env.BREVO_API_KEY
     if (!apiKey) {
       logger.warn('Email not configured — skipping send')
       return false
     }
-    const from = process.env.SMTP_FROM || 'AOV Shop <onboarding@resend.dev>'
-    const res = await fetch('https://api.resend.com/emails', {
+
+    const fromRaw = process.env.SMTP_FROM || 'AOV Shop <pmquang05112003@gmail.com>'
+    // Parse "Name <email>" format
+    const match = fromRaw.match(/^(.+?)<(.+?)>$/)
+    const senderName = match ? match[1].trim() : 'AOV Shop'
+    const senderEmail = match ? match[2].trim() : 'pmquang05112003@gmail.com'
+
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'api-key': apiKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from, to, subject, html, text }),
+      body: JSON.stringify({
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+        textContent: text,
+      }),
     })
+
     const data = await res.json()
+
     if (!res.ok) {
       logger.error('Email send error:', JSON.stringify(data))
-      console.error('[Email] Resend error detail:', JSON.stringify(data))
       return false
     }
-    console.log('[Email] Resend success:', JSON.stringify(data))
+
     logger.info(`Email sent to ${to}: ${subject}`)
     return true
   } catch (err) {
     logger.error('Email send error:', err.message)
-    console.error('[Email] catch error:', err.message, err.stack)
     return false
   }
 }
