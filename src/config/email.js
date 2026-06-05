@@ -36,12 +36,15 @@ const sendMail = async ({ to, subject, html, text }) => {
     const data = await res.json()
     if (!res.ok) {
       logger.error('Email send error:', JSON.stringify(data))
+      console.error('[Email] Resend error detail:', JSON.stringify(data))
       return false
     }
+    console.log('[Email] Resend success:', JSON.stringify(data))
     logger.info(`Email sent to ${to}: ${subject}`)
     return true
   } catch (err) {
     logger.error('Email send error:', err.message)
+    console.error('[Email] catch error:', err.message, err.stack)
     return false
   }
 }
