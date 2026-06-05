@@ -20,6 +20,7 @@ const getSiteLogo = async () => {
 const sendMail = async ({ to, subject, html, text }) => {
   try {
     const apiKey = process.env.BREVO_API_KEY
+    console.log('[Brevo] apiKey exists:', !!apiKey, '| key prefix:', apiKey ? apiKey.substring(0, 10) : 'none')
     if (!apiKey) {
       logger.warn('Email not configured — skipping send')
       return false
@@ -31,6 +32,7 @@ const sendMail = async ({ to, subject, html, text }) => {
     const senderName = match ? match[1].trim() : 'AOV Shop'
     const senderEmail = match ? match[2].trim() : 'pmquang05112003@gmail.com'
 
+    console.log('[Brevo] Sending to:', to, '| from:', senderEmail)
     const res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
@@ -50,13 +52,16 @@ const sendMail = async ({ to, subject, html, text }) => {
 
     if (!res.ok) {
       logger.error('Email send error:', JSON.stringify(data))
+      console.error('[Brevo] Error:', JSON.stringify(data))
       return false
     }
 
+    console.log('[Brevo] Success:', JSON.stringify(data))
     logger.info(`Email sent to ${to}: ${subject}`)
     return true
   } catch (err) {
     logger.error('Email send error:', err.message)
+    console.error('[Brevo] Catch:', err.message)
     return false
   }
 }
