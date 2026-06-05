@@ -295,9 +295,83 @@ const sendResetPasswordEmail = async ({ user, resetUrl }) => {
   })
 }
 
+
+const notifyUserCardPurchase = async ({ user, cards, telco, denomination, quantity, totalPrice }) => {
+  const logo = await getSiteLogo()
+
+  const cardRows = (cards || []).map((c, i) => `
+    <tr>
+      <td style="padding:12px 16px;border-bottom:1px solid #eef0f6;font-size:13px;color:#8791a6;font-weight:700;width:60px;">
+        Thẻ ${i + 1}
+      </td>
+      <td style="padding:12px 16px;border-bottom:1px solid #eef0f6;">
+        <table cellpadding="0" cellspacing="0" border="0" width="100%">
+          ${(c.code || c.serial) ? `<tr><td style="font-size:11px;color:#8791a6;text-transform:uppercase;letter-spacing:.8px;padding-bottom:4px;">Mã thẻ</td></tr>
+          <tr><td style="font-size:15px;font-weight:900;color:#172033;font-family:monospace;letter-spacing:1px;">${c.code || c.serial}</td></tr>` : ''}
+          ${(c.seri || c.serial_number) ? `<tr><td style="font-size:11px;color:#8791a6;text-transform:uppercase;letter-spacing:.8px;padding:6px 0 4px;">Serial</td></tr>
+          <tr><td style="font-size:13px;font-weight:700;color:#7c3aed;font-family:monospace;">${c.seri || c.serial_number}</td></tr>` : ''}
+          ${c.expireDate ? `<tr><td style="font-size:11px;color:#8791a6;padding-top:4px;">HSD: ${c.expireDate}</td></tr>` : ''}
+        </table>
+      </td>
+    </tr>
+  `).join('')
+
+  const content = `
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+      <tr><td align="center">
+        <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
+          <tr><td style="width:70px;height:70px;background:#7c3aed;border-radius:50%;text-align:center;font-size:36px;line-height:70px;">🎫</td></tr>
+        </table>
+        <h2 style="margin:0 0 8px;font-size:24px;font-weight:900;color:#172033;">Mua thẻ <span style="color:#7c3aed;">thành công!</span></h2>
+        <p style="margin:0;font-size:14px;color:#6b7a99;">Xin chào <b>${user.displayName || user.username}</b>, thẻ của bạn đã sẵn sàng sử dụng.</p>
+      </td></tr>
+    </table>
+
+    ${infoCard([
+      { icon: '📡', label: 'Loại thẻ', value: telco, bg: '#f4f0ff', color: '#7c3aed' },
+      { icon: '💰', label: 'Mệnh giá', value: formatMoney(denomination), bg: '#fff3ea', color: '#ec2f75' },
+      { icon: '🔢', label: 'Số lượng', value: quantity + ' thẻ', bg: '#eef9ff' },
+      { icon: '💳', label: 'Tổng tiền', value: formatMoney(totalPrice), bg: '#fff0f6', color: '#ec2f75' },
+    ])}
+
+    ${cards && cards.length > 0 ? `
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;border:1px solid #e2e6f0;border-radius:14px;overflow:hidden;">
+      <tr style="background:#f4f0ff;">
+        <td colspan="2" style="padding:12px 16px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#7c3aed;">
+          🎫 Mã thẻ (${cards.length} thẻ)
+        </td>
+      </tr>
+      ${cardRows}
+    </table>` : ''}
+
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;">
+      <tr><td style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px 16px;font-size:13px;color:#9a3412;line-height:1.7;">
+        ⚠️ Vui lòng lưu lại mã thẻ và sử dụng sớm. AOV Shop không chịu trách nhiệm nếu mã thẻ bị mất sau khi gửi email.
+      </td></tr>
+    </table>
+  `
+
+  const html = baseEmail({
+    logo,
+    title: '🎫 MUA THẺ THÀNH CÔNG',
+    subtitle: `${quantity} thẻ ${telco} mệnh giá ${formatMoney(denomination)} đã sẵn sàng.`,
+    badge: '✅ HOÀN THÀNH',
+    content,
+    footerText: 'Cảm ơn bạn đã sử dụng dịch vụ tại AOV Shop!',
+  })
+
+  return sendMail({
+    to: user.email,
+    subject: `🎫 [AOV Shop] Mua thẻ thành công — ${quantity} thẻ ${telco} ${formatMoney(denomination)}`,
+    html,
+    text: `Mua thẻ thành công! ${quantity} thẻ ${telco} ${formatMoney(denomination)}. Mã thẻ: ${(cards || []).map(c => c.code || c.serial).join(', ')}`,
+  })
+}
+
 module.exports = {
   sendMail,
   notifyAdminTopupOrder,
   notifyUserTopupCompleted,
   sendResetPasswordEmail,
+  notifyUserCardPurchase,
 }
