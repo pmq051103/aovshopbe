@@ -537,13 +537,17 @@ model AccountCategoryRelation {
 }
 
 model AccountSkin {
-  id        String      @id @default(uuid())
-  accountId String
-  skinName  String      @db.VarChar(100)
-  heroName  String?     @db.VarChar(100)
-  tier      String?     @db.VarChar(50)
-  createdAt DateTime    @default(now())
-  account   GameAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  id          String      @id @default(uuid())
+  accountId   String
+  skinName    String      @db.VarChar(150)
+  heroName    String?     @db.VarChar(100)
+  tier        String?     @db.VarChar(50)
+  detectedBy  String      @default("MANUAL") @db.VarChar(10)
+  confidence  Float?
+  isConfirmed Boolean     @default(true)
+  templateId  String?     @db.VarChar(255)
+  createdAt   DateTime    @default(now())
+  account     GameAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId])
   @@index([skinName])
@@ -1020,4 +1024,25 @@ model ChatMessage {
   @@index([sessionId])
   @@index([createdAt])
   @@map("chat_messages")
+}
+
+// ══════════════════════════════════════════════
+// SKIN TEMPLATE (AI Skin Detection)
+// ══════════════════════════════════════════════
+
+model SkinTemplate {
+  id            String     @id @default(uuid())
+  skinName      String     @unique @db.VarChar(150)
+  heroName      String     @db.VarChar(100)
+  aliases       String?    @db.Text
+  rarity        RarityType @default(COMMON)
+  imageUrl      String?    @db.Text
+  imagePublicId String?    @db.VarChar(255)
+  isActive      Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([heroName])
+  @@index([isActive])
+  @@map("skin_templates")
 }
