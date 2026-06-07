@@ -86,7 +86,13 @@ function findBestMatch(geminiName, templates) {
     }
 
     const scoreHero = similarityScore(normQuery, tpl.heroName) * 0.3
-    const finalScore = Math.max(scoreMain, scoreAlias) + (scoreMain < 0.5 ? scoreHero : 0)
+    const baseScore = Math.max(scoreMain, scoreAlias)
+
+const geminiHero = normalize(geminiName)
+const tplHero = normalize(tpl.heroName)
+
+// Nếu Gemini trả tên không chứa tên tướng, không cộng hero bonus
+const finalScore = baseScore
 
     if (finalScore > bestScore) {
       bestScore = finalScore
@@ -94,7 +100,7 @@ function findBestMatch(geminiName, templates) {
     }
   }
 
-  if (bestScore < 0.35) return null
+  if (bestScore < 0.50) return null
 
   return {
     template: best,
@@ -256,7 +262,17 @@ async function detectSkinsFromImage(imageUrl) {
         skinName: match.template.skinName,
         heroName: match.template.heroName,
         rarity: match.template.rarity,
-        confidence: Math.round(Math.min(aiConfidence * match.score * 1.1, 1) * 100) / 100,
+       confidence: (() => {
+  const aiConf = Number(item.confidence || 0.5)
+  const matchScore = Number(match.score || 0)
+
+  // Nếu match tên rất tốt thì ưu tiên matchScore, đừng nhân làm tụt %
+  if (matchScore >= 0.9) return 1.0
+  if (matchScore >= 0.8) return 0.95
+  if (matchScore >= 0.7) return 0.85
+
+  return Math.round(Math.min(aiConf * matchScore, 0.75) * 100) / 100
+})(),
         templateId: match.template.id,
         isMatched: true,
         source: 'AI_VISION',

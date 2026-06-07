@@ -224,14 +224,14 @@ const getAccountById = async (req, res) => {
       })
     }
 
-    await prisma.gameAccount.update({
-      where: { id: account.id },
-      data: {
-        viewCount: {
-          increment: 1,
-        },
-      },
-    })
+    // await prisma.gameAccount.update({
+    //   where: { id: account.id },
+    //   data: {
+    //     viewCount: {
+    //       increment: 1,
+    //     },
+    //   },
+    // })
 
     const isBuyer = account.status === 'SOLD' && req.user?.id === account.soldToId
     const isAdmin = req.user?.role === 'ADMIN'
@@ -629,6 +629,12 @@ const updateAccount = async (req, res) => {
       ? skinNamesRaw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
       : null
 
+    // skinsData: mảng đầy đủ { skinName, heroName, rarity, templateId } từ selectedSkins
+    let skinsData = null
+    if (req.body.skinsData) {
+      try { skinsData = JSON.parse(req.body.skinsData) } catch {}
+    }
+
     const newImages = req.files?.map((f, i) => ({
       url: f.path,
       publicId: f.filename,
@@ -686,67 +692,84 @@ const updateAccount = async (req, res) => {
     }
 
     const account = await prisma.$transaction(async (tx) => {
-      if (skinNames !== null) {
-        await tx.accountSkin.deleteMany({
-          where: { accountId: req.params.id }
-        })
+  if (skinsData !== null || skinNames !== null) {
+    await tx.accountSkin.deleteMany({
+      where: { accountId: req.params.id }
+    })
 
-        if (skinNames.length > 0) {
-          await tx.accountSkin.createMany({
-            data: skinNames.map(name => ({
-              accountId: req.params.id,
-              skinName: name
-            }))
-          })
+    const finalSkins = skinsData !== null
+      ? skinsData
+      : skinNames.map(name => ({
+          skinName: name,
+          heroName: null,
+          rarity: null,
+          templateId: null,
+        }))
 
-          if (data.skins === undefined) data.skins = skinNames.length
-        }
-      }
+    if (finalSkins.length > 0) {
+      await tx.accountSkin.createMany({
+        data: finalSkins.map(s => ({
+          accountId: req.params.id,
+          skinName: s.skinName,
+          heroName: s.heroName || null,
+          tier: s.rarity || null,
+          templateId: s.templateId || null,
+          detectedBy: s.templateId ? 'AI' : 'MANUAL',
+          isConfirmed: true,
+        }))
+      })
+    }
 
-      if (newImages.length > 0) {
-        await tx.gameAccountImage.deleteMany({
-          where: { accountId: req.params.id }
-        })
+    data.skins = finalSkins.length
+  }
 
-        await tx.gameAccountImage.createMany({
-          data: newImages.map(img => ({
-            accountId: req.params.id,
-            url: img.url,
-            publicId: img.publicId,
-            sortOrder: img.sortOrder
-          }))
-        })
-      }
+  if (newImages.length > 0) {
+    await tx.gameAccountImage.deleteMany({
+      where: { accountId: req.params.id }
+    })
 
-      if (req.body.categoryId !== undefined) {
-        await tx.accountCategoryRelation.deleteMany({
-          where: { accountId: req.params.id }
-        })
+    await tx.gameAccountImage.createMany({
+      data: newImages.map(img => ({
+        accountId: req.params.id,
+        url: img.url,
+        publicId: img.publicId,
+        sortOrder: img.sortOrder
+      }))
+    })
+  }
 
-        if (req.body.categoryId) {
-          await tx.accountCategoryRelation.create({
-            data: {
-              accountId: req.params.id,
-              categoryId: req.body.categoryId
-            }
-          })
-        }
-      }
+  if (req.body.categoryId !== undefined) {
+    await tx.accountCategoryRelation.deleteMany({
+      where: { accountId: req.params.id }
+    })
 
-      return tx.gameAccount.update({
-        where: { id: req.params.id },
-        data,
-        include: {
-          images: { orderBy: { sortOrder: 'asc' } },
-          skins_rel: true,
-          categoryRelations: {
-            include: {
-              category: true
-            }
-          }
+    if (req.body.categoryId) {
+      await tx.accountCategoryRelation.create({
+        data: {
+          accountId: req.params.id,
+          categoryId: req.body.categoryId
         }
       })
-    })
+    }
+  }
+
+  return tx.gameAccount.update({
+    where: { id: req.params.id },
+    data,
+    include: {
+      images: { orderBy: { sortOrder: 'asc' } },
+      skins_rel: true,
+      categoryRelations: {
+        include: {
+          category: true
+        }
+      }
+    }
+  })
+}, {
+  timeout: 15000,
+  maxWait: 10000
+})
 
     if (newImages.length > 0) {
       const publicIds = new Set()
