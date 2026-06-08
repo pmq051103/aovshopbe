@@ -68,28 +68,34 @@ const sendMail = async ({ to, subject, html, text }) => {
 
 const formatMoney = value => `${parseInt(value || 0).toLocaleString('vi-VN')}đ`
 
+const BRAND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
+
 const baseEmail = ({ logo, title, subtitle, badge, content, footerText }) => `
 <!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="x-apple-disable-message-reformatting" />
 </head>
-<body style="margin:0;padding:0;background:#f0f2f5;font-family:Arial,Helvetica,sans-serif;color:#172033;">
-  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f0f2f5;padding:32px 0;">
+<body style="margin:0;padding:0;background:#eef1f7;font-family:'Segoe UI',Arial,Helvetica,sans-serif;color:#1a2233;-webkit-font-smoothing:antialiased;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="background:#eef1f7;padding:36px 12px;">
     <tr>
       <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #e2e6f0;">
+        <table width="600" cellpadding="0" cellspacing="0" border="0" role="presentation" style="max-width:600px;width:100%;background:#ffffff;border-radius:22px;overflow:hidden;border:1px solid #e3e7f1;">
+
+          <!-- ACCENT BAR -->
+          <tr><td style="height:6px;background:linear-gradient(90deg,#ec2f75,#7c3aed);font-size:0;line-height:0;">&nbsp;</td></tr>
 
           <!-- HEADER -->
           <tr>
-            <td style="background:linear-gradient(135deg,#fff1f7 0%,#f3edff 55%,#eef3ff 100%);padding:40px 36px 32px;text-align:center;">
-              ${logo ? `<img src="${logo}" alt="AOV Shop" width="140" height="auto" style="display:block;margin:0 auto 20px;border:0;" />` : ''}
-              <h1 style="margin:0;font-size:26px;font-weight:900;color:#172033;line-height:1.3;">${title}</h1>
-              ${subtitle ? `<p style="margin:14px auto 0;max-width:460px;font-size:14px;line-height:1.7;color:#6b7a99;">${subtitle}</p>` : ''}
+            <td style="background:linear-gradient(135deg,#fff1f7 0%,#f3edff 55%,#eef3ff 100%);padding:38px 36px 30px;text-align:center;">
+              ${logo ? `<img src="${logo}" alt="AOV Shop" width="132" height="auto" style="display:block;margin:0 auto 18px;border:0;" />` : ''}
+              <h1 style="margin:0;font-size:24px;font-weight:900;color:#1a2233;line-height:1.35;letter-spacing:.2px;">${title}</h1>
+              ${subtitle ? `<p style="margin:12px auto 0;max-width:440px;font-size:14px;line-height:1.7;color:#6b7689;">${subtitle}</p>` : ''}
               ${badge ? `
-              <table cellpadding="0" cellspacing="0" border="0" style="margin:20px auto 0;">
-                <tr><td style="background:#fff8ec;border:1px solid #ffd59a;border-radius:999px;padding:8px 20px;font-size:13px;font-weight:800;color:#c97a10;">${badge}</td></tr>
+              <table cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin:18px auto 0;">
+                <tr><td style="background:#ffffff;border:1px solid #e7d7fb;border-radius:999px;padding:7px 18px;font-size:12px;font-weight:800;letter-spacing:.5px;color:#7c3aed;">${badge}</td></tr>
               </table>` : ''}
             </td>
           </tr>
@@ -103,9 +109,11 @@ const baseEmail = ({ logo, title, subtitle, badge, content, footerText }) => `
 
           <!-- FOOTER -->
           <tr>
-            <td style="background:#f8f9ff;border-top:1px solid #e8eaf0;padding:20px 36px;text-align:center;">
-              <p style="margin:0 0 4px;font-size:14px;font-weight:800;color:#52617a;">🛡️ AOV Shop</p>
-              <p style="margin:0;font-size:12px;color:#8a94a8;">${footerText || `Ngày ${new Date().toLocaleString('vi-VN')}`}</p>
+            <td style="background:#f7f8fc;border-top:1px solid #e8eaf2;padding:24px 36px;text-align:center;">
+              <p style="margin:0 0 6px;font-size:15px;font-weight:900;color:#1a2233;letter-spacing:.3px;">AOV Shop</p>
+              <p style="margin:0 0 12px;font-size:12px;color:#8a94a8;line-height:1.6;">${footerText || `Cảm ơn bạn đã đồng hành cùng AOV Shop.`}</p>
+              <p style="margin:0 0 4px;font-size:12px;color:#9aa3b5;">Cần hỗ trợ? Truy cập <a href="${BRAND_URL}" style="color:#7c3aed;text-decoration:none;font-weight:700;">website của chúng tôi</a>.</p>
+              <p style="margin:0;font-size:11px;color:#b3bbc9;">Đây là email tự động, vui lòng không trả lời. © ${new Date().getFullYear()} AOV Shop.</p>
             </td>
           </tr>
 
@@ -117,26 +125,76 @@ const baseEmail = ({ logo, title, subtitle, badge, content, footerText }) => `
 </html>
 `
 
+// Bảng thông tin: label trái – value phải, có dải màu nhấn bên trái mỗi hàng
 const infoCard = items => `
-  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e2e6f0;border-radius:14px;overflow:hidden;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border:1px solid #e7eaf2;border-radius:14px;overflow:hidden;background:#fcfcff;">
     ${items.map((item, i) => `
-    <tr style="${i !== 0 ? 'border-top:1px solid #eef0f6;' : ''}">
-      <td style="padding:16px 18px;${i !== 0 ? 'border-top:1px solid #eef0f6;' : ''}">
-        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td style="${i !== 0 ? 'border-top:1px solid #eef0f6;' : ''}padding:0;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
           <tr>
-            <td width="48" valign="middle" style="padding-right:14px;">
-              <table cellpadding="0" cellspacing="0" border="0">
-                <tr><td style="width:44px;height:44px;background:${item.bg || '#f4f6ff'};border-radius:12px;text-align:center;font-size:20px;line-height:44px;">${item.icon}</td></tr>
+            <td width="4" style="background:${item.color || '#cbd2e0'};font-size:0;line-height:0;">&nbsp;</td>
+            <td style="padding:14px 18px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+                <tr>
+                  <td valign="middle" style="font-size:12px;font-weight:700;color:#8791a6;">${item.label}</td>
+                  <td valign="middle" align="right" style="font-size:15px;font-weight:800;color:${item.color || '#1a2233'};word-break:break-word;padding-left:12px;">${item.value}</td>
+                </tr>
               </table>
-            </td>
-            <td valign="middle">
-              <p style="margin:0 0 4px;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#8791a6;">${item.label}</p>
-              <p style="margin:0;font-size:15px;font-weight:900;color:${item.color || '#172033'};word-break:break-word;">${item.value}</p>
             </td>
           </tr>
         </table>
       </td>
     </tr>`).join('')}
+  </table>
+`
+
+// Khối làm nổi giá trị chính (số tiền / Quân Huy)
+const heroBlock = ({ label, value, sub, color }) => `
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin:0 0 24px;">
+    <tr><td align="center" style="background:linear-gradient(135deg,#fff1f7,#f3edff);border:1px solid #efe2fb;border-radius:16px;padding:26px 24px;">
+      <p style="margin:0 0 8px;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8791a6;font-weight:800;">${label}</p>
+      <p style="margin:0;font-size:34px;font-weight:900;color:${color || '#7c3aed'};line-height:1.05;">${value}</p>
+      ${sub ? `<p style="margin:10px 0 0;font-size:13px;color:#6b7689;">${sub}</p>` : ''}
+    </td></tr>
+  </table>
+`
+
+// Nút CTA chống vỡ trên Outlook (VML fallback)
+const ctaButton = (url, label) => `
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin:0 0 8px;">
+    <tr><td align="center">
+      <!--[if mso]>
+      <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${url}" style="height:50px;v-text-anchor:middle;width:340px;" arcsize="24%" fillcolor="#7c3aed" stroke="f">
+      <w:anchorlock/><center style="color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;">${label}</center>
+      </v:roundrect>
+      <![endif]-->
+      <!--[if !mso]><!-->
+      <a href="${url}" style="display:inline-block;background:linear-gradient(135deg,#ec2f75,#7c3aed);color:#ffffff;text-decoration:none;font-size:15px;font-weight:800;padding:15px 38px;border-radius:12px;">${label}</a>
+      <!--<![endif]-->
+    </td></tr>
+  </table>
+`
+
+// Hộp ghi chú nhiều tông màu
+const noticeBox = (text, tone = 'info') => {
+  const tones = {
+    info: { bg: '#eef4ff', border: '#cfe0ff', color: '#33508a' },
+    warn: { bg: '#fff7ed', border: '#fed7aa', color: '#9a3412' },
+    success: { bg: '#ecfdf3', border: '#bbf7d0', color: '#166534' },
+    secure: { bg: '#f5f3ff', border: '#ddd0fb', color: '#5b34c4' },
+  }
+  const t = tones[tone] || tones.info
+  return `
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:16px;">
+    <tr><td style="background:${t.bg};border:1px solid ${t.border};border-radius:12px;padding:14px 16px;font-size:13px;color:${t.color};line-height:1.7;">${text}</td></tr>
+  </table>`
+}
+
+// Vòng tròn dấu tích cho email thành công
+const checkCircle = () => `
+  <table cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin:0 auto 18px;">
+    <tr><td style="width:66px;height:66px;background:#22c55e;border-radius:50%;text-align:center;vertical-align:middle;font-size:34px;line-height:66px;color:#ffffff;font-family:Arial,sans-serif;">✓</td></tr>
   </table>
 `
 
@@ -149,45 +207,42 @@ const notifyAdminTopupOrder = async ({ order, user, pkg }) => {
   const adminUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin/topup`
 
   const content = `
-    <p style="margin:0 0 8px;font-size:15px;line-height:1.7;color:#344054;">Có một đơn nạp Quân Huy mới cần được xử lý.</p>
-    <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#344054;">Vui lòng đăng nhập Admin Panel để xác nhận.</p>
+    <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#344054;text-align:center;">Có một đơn nạp Quân Huy mới đang chờ bạn xác nhận trong Admin Panel.</p>
+
+    ${heroBlock({
+      label: 'Quân Huy cần nạp',
+      value: totalQH.toLocaleString('vi-VN'),
+      sub: `Gói ${pkg.name} • ${formatMoney(pkg.price)}`,
+      color: '#7c3aed',
+    })}
 
     ${infoCard([
-      { icon: '📄', label: 'Mã đơn', value: '#' + order.orderCode, color: '#ec2f75', bg: '#fff0f6' },
-      { icon: '👤', label: 'Người dùng', value: user.displayName || user.username, bg: '#f4f0ff' },
-      { icon: '✉️', label: 'Email', value: user.email || 'Không có', color: '#1976d2', bg: '#edf6ff' },
-      { icon: '🎁', label: 'Gói nạp', value: pkg.name, bg: '#f0fff8' },
-      { icon: '⚔️', label: 'Quân Huy', value: totalQH.toLocaleString('vi-VN'), color: '#7c3aed', bg: '#f4f0ff' },
-      { icon: '💰', label: 'Chi phí', value: formatMoney(pkg.price), color: '#ec2f75', bg: '#fff3ea' },
-      { icon: '🎮', label: 'ID Game', value: order.gamePlayerId, bg: '#eef9ff' },
-      { icon: '🗄️', label: 'Server', value: order.gameServer || 'Không có', bg: '#f3f6fb' },
-      { icon: '📝', label: 'Ghi chú', value: order.note || 'Không có ghi chú', bg: '#f8fafc' },
+      { label: 'Mã đơn', value: '#' + order.orderCode, color: '#ec2f75' },
+      { label: 'Người dùng', value: user.displayName || user.username },
+      { label: 'Email', value: user.email || 'Không có', color: '#1976d2' },
+      { label: 'Chi phí', value: formatMoney(pkg.price), color: '#ec2f75' },
+      { label: 'ID Game', value: order.gamePlayerId },
+      { label: 'Server', value: order.gameServer || 'Không có' },
+      { label: 'Ghi chú', value: order.note || 'Không có ghi chú' },
     ])}
 
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
-      <tr><td align="center" style="background:linear-gradient(135deg,#ec2f75,#7c3aed);border-radius:12px;">
-        <a href="${adminUrl}" style="display:block;padding:16px 24px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:900;">→ Vào Admin để xử lý ngay</a>
-      </td></tr>
-    </table>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:24px;"><tr><td>&nbsp;</td></tr></table>
+    ${ctaButton(adminUrl, 'Vào Admin xử lý ngay')}
 
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;">
-      <tr><td style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:16px 18px;font-size:13px;color:#41516a;line-height:1.7;">
-        <b>Lưu ý:</b> Vui lòng xử lý đơn hàng sớm nhất để đảm bảo trải nghiệm tốt cho khách hàng.
-      </td></tr>
-    </table>
+    ${noticeBox('<b>Lưu ý:</b> Vui lòng xử lý đơn hàng sớm nhất để đảm bảo trải nghiệm tốt cho khách hàng.', 'info')}
   `
 
   const html = baseEmail({
     logo,
-    title: '⚔️ ĐƠN NẠP QUÂN HUY MỚI',
+    title: 'ĐƠN NẠP QUÂN HUY MỚI',
     subtitle: 'Có một đơn nạp Quân Huy mới cần được xử lý.',
-    badge: '⏳ CHỜ XỬ LÝ',
+    badge: 'CHỜ XỬ LÝ',
     content,
   })
 
   await sendMail({
     to: adminEmail,
-    subject: `⚔️ [AOV Shop] Đơn nạp Quân Huy mới #${order.orderCode} — ${user.username}`,
+    subject: `[AOV Shop] Đơn nạp Quân Huy mới #${order.orderCode} — ${user.username}`,
     html,
     text: `Đơn nạp Quân Huy mới: #${order.orderCode} | User: ${user.username} | Gói: ${pkg.name} | QH: ${totalQH} | Xử lý tại: ${adminUrl}`,
   })
@@ -197,28 +252,28 @@ const notifyUserTopupCompleted = async ({ order, user, pkg, totalQuanHuy }) => {
   const logo = await getSiteLogo()
 
   const content = `
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:22px;">
       <tr><td align="center">
-        <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
-          <tr><td style="width:70px;height:70px;background:#22c55e;border-radius:50%;text-align:center;font-size:36px;line-height:70px;color:white;">✓</td></tr>
-        </table>
-        <h2 style="margin:0 0 8px;font-size:24px;font-weight:900;color:#172033;">Nạp Quân Huy <span style="color:#16a34a;">thành công!</span></h2>
-        <p style="margin:0;font-size:14px;color:#6b7a99;">Đơn nạp Quân Huy của bạn đã được xử lý thành công.</p>
+        ${checkCircle()}
+        <h2 style="margin:0 0 8px;font-size:23px;font-weight:900;color:#1a2233;">Nạp Quân Huy <span style="color:#16a34a;">thành công!</span></h2>
+        <p style="margin:0;font-size:14px;color:#6b7689;">Đơn nạp Quân Huy của bạn đã được xử lý thành công.</p>
       </td></tr>
     </table>
+
+    ${heroBlock({
+      label: 'Quân Huy đã nhận',
+      value: '+' + totalQuanHuy.toLocaleString('vi-VN'),
+      sub: pkg.name,
+      color: '#16a34a',
+    })}
 
     ${infoCard([
-      { icon: '📄', label: 'Mã đơn', value: '#' + order.orderCode, color: '#7c3aed', bg: '#f4f0ff' },
-      { icon: '🎁', label: 'Gói nạp', value: pkg.name, bg: '#f0fff8' },
-      { icon: '⚔️', label: 'Quân Huy nhận', value: totalQuanHuy.toLocaleString('vi-VN'), color: '#7c3aed', bg: '#f4f0ff' },
-      { icon: '🎮', label: 'ID Game', value: order.gamePlayerId, bg: '#eef9ff' },
+      { label: 'Mã đơn', value: '#' + order.orderCode, color: '#7c3aed' },
+      { label: 'Gói nạp', value: pkg.name },
+      { label: 'ID Game', value: order.gamePlayerId },
     ])}
 
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;">
-      <tr><td style="background:#ecfdf3;border:1px solid #bbf7d0;border-radius:12px;padding:16px 18px;font-size:13px;color:#166534;text-align:center;">
-        ✅ Quân Huy đã được cộng vào tài khoản của bạn.
-      </td></tr>
-    </table>
+    ${noticeBox('Quân Huy đã được cộng vào tài khoản game của bạn. Chúc bạn chơi game vui vẻ!', 'success')}
   `
 
   const html = baseEmail({
@@ -232,7 +287,7 @@ const notifyUserTopupCompleted = async ({ order, user, pkg, totalQuanHuy }) => {
 
   await sendMail({
     to: user.email,
-    subject: `⚔️ [AOV Shop] Nạp Quân Huy thành công — +${totalQuanHuy} Quân Huy`,
+    subject: `[AOV Shop] Nạp Quân Huy thành công — +${totalQuanHuy} Quân Huy`,
     html,
     text: `Đơn nạp Quân Huy #${order.orderCode} đã hoàn thành. Bạn nhận được +${totalQuanHuy} Quân Huy.`,
   })
@@ -242,45 +297,30 @@ const sendResetPasswordEmail = async ({ user, resetUrl }) => {
   const logo = await getSiteLogo()
 
   const content = `
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:24px;">
       <tr><td align="center">
-        <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
-          <tr><td style="width:70px;height:70px;background:linear-gradient(135deg,#ec2f75,#7c3aed);border-radius:50%;text-align:center;font-size:28px;line-height:70px;">🔐</td></tr>
-        </table>
-        <h2 style="margin:0 0 8px;font-size:22px;font-weight:900;color:#172033;">Yêu cầu đặt lại mật khẩu</h2>
-        <p style="margin:0;font-size:14px;color:#6b7a99;">Xin chào <b>${user.displayName || user.username}</b>, bạn vừa yêu cầu đặt lại mật khẩu cho tài khoản AOV Shop.</p>
+        <h2 style="margin:0 0 8px;font-size:22px;font-weight:900;color:#1a2233;">Yêu cầu đặt lại mật khẩu</h2>
+        <p style="margin:0;font-size:14px;line-height:1.7;color:#6b7689;">Xin chào <b>${user.displayName || user.username}</b>, bạn vừa yêu cầu đặt lại mật khẩu cho tài khoản AOV Shop. Nhấn nút bên dưới để tạo mật khẩu mới.</p>
       </td></tr>
     </table>
 
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
-      <tr><td align="center" style="background:linear-gradient(135deg,#ec2f75,#7c3aed);border-radius:12px;">
-        <a href="${resetUrl}" style="display:block;padding:16px 24px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:900;">→ Đặt lại mật khẩu ngay</a>
-      </td></tr>
-    </table>
+    ${ctaButton(resetUrl, 'Đặt lại mật khẩu')}
 
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:12px;">
-      <tr><td style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px 16px;font-size:13px;color:#9a3412;line-height:1.7;">
-        ⏰ Link đặt lại mật khẩu sẽ hết hạn sau <b>1 giờ</b>.
-      </td></tr>
-    </table>
+    ${noticeBox('Link đặt lại mật khẩu sẽ hết hạn sau <b>1 giờ</b> kể từ khi gửi email này.', 'warn')}
 
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:12px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:16px;">
       <tr><td style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;font-size:12px;color:#475569;line-height:1.7;">
-        Nếu nút không hoạt động, copy link này:<br/>
+        Nếu nút không hoạt động, hãy sao chép đường link sau vào trình duyệt:<br/>
         <a href="${resetUrl}" style="color:#7c3aed;word-break:break-all;">${resetUrl}</a>
       </td></tr>
     </table>
 
-    <table width="100%" cellpadding="0" cellspacing="0" border="0">
-      <tr><td style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px 16px;font-size:13px;color:#1e40af;line-height:1.7;">
-        🛡️ Nếu bạn không yêu cầu đổi mật khẩu, hãy bỏ qua email này.
-      </td></tr>
-    </table>
+    ${noticeBox('Nếu bạn không yêu cầu đổi mật khẩu, hãy bỏ qua email này. Tài khoản của bạn vẫn an toàn.', 'secure')}
   `
 
   const html = baseEmail({
     logo,
-    title: '🔐 ĐẶT LẠI MẬT KHẨU',
+    title: 'ĐẶT LẠI MẬT KHẨU',
     subtitle: 'Bạn đang yêu cầu tạo mật khẩu mới cho tài khoản AOV Shop.',
     badge: 'BẢO MẬT TÀI KHOẢN',
     content,
@@ -289,7 +329,7 @@ const sendResetPasswordEmail = async ({ user, resetUrl }) => {
 
   return sendMail({
     to: user.email,
-    subject: '🔐 [AOV Shop] Đặt lại mật khẩu tài khoản',
+    subject: '[AOV Shop] Đặt lại mật khẩu tài khoản',
     html,
     text: `Xin chào ${user.displayName || user.username}, mở link sau để đặt lại mật khẩu: ${resetUrl}. Link hết hạn sau 1 giờ.`,
   })
@@ -299,70 +339,64 @@ const sendResetPasswordEmail = async ({ user, resetUrl }) => {
 const notifyUserCardPurchase = async ({ user, cards, telco, denomination, quantity, totalPrice }) => {
   const logo = await getSiteLogo()
 
-  const cardRows = (cards || []).map((c, i) => `
-    <tr>
-      <td style="padding:12px 16px;border-bottom:1px solid #eef0f6;font-size:13px;color:#8791a6;font-weight:700;width:60px;">
-        Thẻ ${i + 1}
-      </td>
-      <td style="padding:12px 16px;border-bottom:1px solid #eef0f6;">
-        <table cellpadding="0" cellspacing="0" border="0" width="100%">
-          ${(c.code || c.serial) ? `<tr><td style="font-size:11px;color:#8791a6;text-transform:uppercase;letter-spacing:.8px;padding-bottom:4px;">Mã thẻ</td></tr>
-          <tr><td style="font-size:15px;font-weight:900;color:#172033;font-family:monospace;letter-spacing:1px;">${c.code || c.serial}</td></tr>` : ''}
-          ${(c.seri || c.serial_number) ? `<tr><td style="font-size:11px;color:#8791a6;text-transform:uppercase;letter-spacing:.8px;padding:6px 0 4px;">Serial</td></tr>
-          <tr><td style="font-size:13px;font-weight:700;color:#7c3aed;font-family:monospace;">${c.seri || c.serial_number}</td></tr>` : ''}
-          ${c.expireDate ? `<tr><td style="font-size:11px;color:#8791a6;padding-top:4px;">HSD: ${c.expireDate}</td></tr>` : ''}
-        </table>
-      </td>
-    </tr>
-  `).join('')
+  const cardBlocks = (cards || []).map((c, i) => {
+    const code = c.code || c.serial
+    const seri = c.seri || c.serial_number
+    return `
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:12px;border:1px solid #e7eaf2;border-radius:12px;overflow:hidden;">
+      <tr><td style="background:#f6f3ff;padding:8px 16px;font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#7c3aed;">Thẻ ${i + 1}</td></tr>
+      <tr><td style="padding:14px 16px;">
+        ${code ? `<p style="margin:0 0 2px;font-size:11px;color:#8791a6;text-transform:uppercase;letter-spacing:.8px;">Mã thẻ</p>
+        <p style="margin:0 0 10px;font-size:19px;font-weight:900;color:#1a2233;font-family:'Courier New',monospace;letter-spacing:2px;">${code}</p>` : ''}
+        ${seri ? `<p style="margin:0 0 2px;font-size:11px;color:#8791a6;text-transform:uppercase;letter-spacing:.8px;">Serial</p>
+        <p style="margin:0;font-size:14px;font-weight:700;color:#7c3aed;font-family:'Courier New',monospace;">${seri}</p>` : ''}
+        ${c.expireDate ? `<p style="margin:8px 0 0;font-size:12px;color:#8791a6;">Hạn sử dụng: ${c.expireDate}</p>` : ''}
+      </td></tr>
+    </table>`
+  }).join('')
 
   const content = `
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:22px;">
       <tr><td align="center">
-        <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
-          <tr><td style="width:70px;height:70px;background:#7c3aed;border-radius:50%;text-align:center;font-size:36px;line-height:70px;">🎫</td></tr>
-        </table>
-        <h2 style="margin:0 0 8px;font-size:24px;font-weight:900;color:#172033;">Mua thẻ <span style="color:#7c3aed;">thành công!</span></h2>
-        <p style="margin:0;font-size:14px;color:#6b7a99;">Xin chào <b>${user.displayName || user.username}</b>, thẻ của bạn đã sẵn sàng sử dụng.</p>
+        ${checkCircle()}
+        <h2 style="margin:0 0 8px;font-size:23px;font-weight:900;color:#1a2233;">Mua thẻ <span style="color:#7c3aed;">thành công!</span></h2>
+        <p style="margin:0;font-size:14px;color:#6b7689;">Xin chào <b>${user.displayName || user.username}</b>, thẻ của bạn đã sẵn sàng sử dụng.</p>
       </td></tr>
     </table>
 
+    ${heroBlock({
+      label: `${telco} • ${formatMoney(denomination)}`,
+      value: formatMoney(totalPrice),
+      sub: `${quantity} thẻ`,
+      color: '#ec2f75',
+    })}
+
     ${infoCard([
-      { icon: '📡', label: 'Loại thẻ', value: telco, bg: '#f4f0ff', color: '#7c3aed' },
-      { icon: '💰', label: 'Mệnh giá', value: formatMoney(denomination), bg: '#fff3ea', color: '#ec2f75' },
-      { icon: '🔢', label: 'Số lượng', value: quantity + ' thẻ', bg: '#eef9ff' },
-      { icon: '💳', label: 'Tổng tiền', value: formatMoney(totalPrice), bg: '#fff0f6', color: '#ec2f75' },
+      { label: 'Loại thẻ', value: telco, color: '#7c3aed' },
+      { label: 'Mệnh giá', value: formatMoney(denomination), color: '#ec2f75' },
+      { label: 'Số lượng', value: quantity + ' thẻ' },
+      { label: 'Tổng tiền', value: formatMoney(totalPrice), color: '#ec2f75' },
     ])}
 
     ${cards && cards.length > 0 ? `
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;border:1px solid #e2e6f0;border-radius:14px;overflow:hidden;">
-      <tr style="background:#f4f0ff;">
-        <td colspan="2" style="padding:12px 16px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#7c3aed;">
-          🎫 Mã thẻ (${cards.length} thẻ)
-        </td>
-      </tr>
-      ${cardRows}
-    </table>` : ''}
+    <p style="margin:24px 0 0;font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#7c3aed;">Mã thẻ của bạn (${cards.length} thẻ)</p>
+    ${cardBlocks}` : ''}
 
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;">
-      <tr><td style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px 16px;font-size:13px;color:#9a3412;line-height:1.7;">
-        ⚠️ Vui lòng lưu lại mã thẻ và sử dụng sớm. AOV Shop không chịu trách nhiệm nếu mã thẻ bị mất sau khi gửi email.
-      </td></tr>
-    </table>
+    ${noticeBox('Vui lòng lưu lại mã thẻ và sử dụng sớm. AOV Shop không chịu trách nhiệm nếu mã thẻ bị mất sau khi đã gửi qua email.', 'warn')}
   `
 
   const html = baseEmail({
     logo,
-    title: '🎫 MUA THẺ THÀNH CÔNG',
+    title: 'MUA THẺ THÀNH CÔNG',
     subtitle: `${quantity} thẻ ${telco} mệnh giá ${formatMoney(denomination)} đã sẵn sàng.`,
-    badge: '✅ HOÀN THÀNH',
+    badge: 'HOÀN THÀNH',
     content,
     footerText: 'Cảm ơn bạn đã sử dụng dịch vụ tại AOV Shop!',
   })
 
   return sendMail({
     to: user.email,
-    subject: `🎫 [AOV Shop] Mua thẻ thành công — ${quantity} thẻ ${telco} ${formatMoney(denomination)}`,
+    subject: `[AOV Shop] Mua thẻ thành công — ${quantity} thẻ ${telco} ${formatMoney(denomination)}`,
     html,
     text: `Mua thẻ thành công! ${quantity} thẻ ${telco} ${formatMoney(denomination)}. Mã thẻ: ${(cards || []).map(c => c.code || c.serial).join(', ')}`,
   })
