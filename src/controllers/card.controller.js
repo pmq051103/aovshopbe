@@ -1154,7 +1154,7 @@ const buyCard = async (req, res) => {
           userId: req.user.id,
           type: 'PURCHASE',
           status: 'COMPLETED',
-          amount: totalPrice,
+          amount: -totalPrice,
           balanceBefore: user.balance,
           balanceAfter: updated.balance,
           description: `Mua ${qty} thẻ ${config.telcoLabel || config.telco} ${denom.toLocaleString('vi-VN')}đ`,
