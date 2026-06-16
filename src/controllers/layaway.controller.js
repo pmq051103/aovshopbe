@@ -272,27 +272,82 @@ const getMyLayaways = async (req, res) => {
     const layaways = await prisma.layaway.findMany({
       where: { userId: req.user.id },
       include: {
-       account: {
-  select: {
-    title: true,
-    code: true,
-    price: true,
-    thumbnailUrl: true,
-    rank: true,
-    gameUsername: true,
-    gamePassword: true,
-    gameBindEmail: true,
-    gameBindPhone: true,
-    gameBindFacebook: true,
-  }
-},
-        payments: { orderBy: { createdAt: 'asc' } }
+        account: true,
+        payments: {
+          orderBy: { createdAt: 'asc' },
+        },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: {
+        createdAt: 'desc',
+      },
     })
-    res.json({ success: true, data: layaways })
+
+    const data = layaways.map((layaway) => {
+      const paidPercent =
+        (Number(layaway.paidAmount || 0) /
+          Number(layaway.totalPrice || 1)) *
+        100
+
+      const hasBindInfo =
+        !!layaway.account?.gameBindEmail ||
+        !!layaway.account?.gameBindPhone
+
+      const isCompleted = layaway.status === 'COMPLETED'
+
+      // Đã hoàn tất => luôn xem được
+      // Chưa hoàn tất => phải >=70% và acc có email/sđt bind
+      const canShowLogin =
+        isCompleted || (paidPercent >= 70 && hasBindInfo)
+
+      return {
+        ...layaway,
+
+        paidPercent,
+        canShowLogin,
+
+        accountHoldMessage:
+          !isCompleted &&
+          paidPercent >= 70 &&
+          !hasBindInfo
+            ? 'Acc này hiện không có email hoặc SĐT bind. Bạn đã thanh toán từ 70%, vui lòng liên hệ admin để trao đổi nếu muốn cầm acc chơi trước.'
+            : null,
+
+        account: {
+          ...layaway.account,
+
+          gameUsername: canShowLogin
+            ? layaway.account?.gameUsername
+            : null,
+
+          gamePassword: canShowLogin
+            ? layaway.account?.gamePassword
+            : null,
+
+          // Thông tin bind vẫn cho xem khi đã đủ điều kiện
+          gameBindEmail: canShowLogin
+            ? layaway.account?.gameBindEmail
+            : null,
+
+          gameBindPhone: canShowLogin
+            ? layaway.account?.gameBindPhone
+            : null,
+
+          gameBindFacebook: canShowLogin
+            ? layaway.account?.gameBindFacebook
+            : null,
+        },
+      }
+    })
+
+    res.json({
+      success: true,
+      data,
+    })
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message })
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    })
   }
 }
 
