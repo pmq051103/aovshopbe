@@ -50,6 +50,13 @@ model User {
   mysteryBoxOwned     MysteryBoxAccount[]   @relation("MysteryBoxOwner")
   mysteryBoxOpened    MysteryBoxOpenHistory[] @relation("MysteryBoxOpenHistory")
   chatSessions        ChatSession[]
+  affiliate         Affiliate?
+  vipMembership     VipMembership?
+  wishlists         Wishlist[]
+  layaways          Layaway[]
+  installmentReqs   InstallmentRequest[]
+  referredBy        AffiliateReferral?   @relation("ReferredUser")
+
 
   @@map("users")
 }
@@ -92,6 +99,9 @@ model GameAccount {
   images            GameAccountImage[]
   soldTo            User?                     @relation(fields: [soldToId], references: [id])
   transactions      Transaction?
+  wishlists         Wishlist[]
+  layaway           Layaway?
+  installmentReqs   InstallmentRequest[]
 
   @@index([status])
   @@index([rank])
@@ -649,6 +659,7 @@ enum AccountStatus {
   AVAILABLE
   SOLD
   HIDDEN
+  RESERVED
 }
 
 enum FacebookLinkStatus {
@@ -1045,4 +1056,217 @@ model SkinTemplate {
   @@index([heroName])
   @@index([isActive])
   @@map("skin_templates")
+}
+
+
+model Affiliate {
+  id              String            @id @default(uuid())
+  userId          String            @unique
+  code            String            @unique @db.VarChar(20)   // mã giới thiệu, VD: CTV_ABC123
+  status          AffiliateStatus   @default(PENDING)         // chờ duyệt → active → suspended
+  commissionRate  Decimal           @default(5.00) @db.Decimal(5, 2) // % hoa hồng
+  totalReferrals  Int               @default(0)
+  totalEarned     Decimal           @default(0.00) @db.Decimal(15, 2)
+  totalPaid       Decimal           @default(0.00) @db.Decimal(15, 2)
+  pendingBalance  Decimal           @default(0.00) @db.Decimal(15, 2)
+  bankName        String?           @db.VarChar(100)
+  bankAccount     String?           @db.VarChar(50)
+  bankOwner       String?           @db.VarChar(100)
+  note            String?           @db.Text
+  approvedAt      DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  user            User              @relation(fields: [userId], references: [id])
+  referrals       AffiliateReferral[]
+  withdrawals     AffiliateWithdrawal[]
+  commissions     AffiliateCommission[]
+
+  @@index([code])
+  @@index([status])
+  @@map("affiliates")
+}
+
+model AffiliateReferral {
+  id            String    @id @default(uuid())
+  affiliateId   String
+  referredUserId String   @unique   // mỗi user chỉ được giới thiệu 1 lần
+  createdAt     DateTime  @default(now())
+  affiliate     Affiliate @relation(fields: [affiliateId], references: [id])
+  referredUser  User      @relation("ReferredUser", fields: [referredUserId], references: [id])
+
+  @@index([affiliateId])
+  @@map("affiliate_referrals")
+}
+
+model AffiliateCommission {
+  id            String              @id @default(uuid())
+  affiliateId   String
+  orderId       String?             // đơn hàng phát sinh hoa hồng
+  amount        Decimal             @db.Decimal(15, 2)
+  rate          Decimal             @db.Decimal(5, 2)
+  orderAmount   Decimal             @db.Decimal(15, 2)
+  status        CommissionStatus    @default(PENDING)
+  paidAt        DateTime?
+  createdAt     DateTime            @default(now())
+  affiliate     Affiliate           @relation(fields: [affiliateId], references: [id])
+
+  @@index([affiliateId])
+  @@index([status])
+  @@map("affiliate_commissions")
+}
+
+model AffiliateWithdrawal {
+  id            String              @id @default(uuid())
+  affiliateId   String
+  amount        Decimal             @db.Decimal(15, 2)
+  status        WithdrawalStatus    @default(PENDING)
+  note          String?             @db.Text
+  processedAt   DateTime?
+  createdAt     DateTime            @default(now())
+  affiliate     Affiliate           @relation(fields: [affiliateId], references: [id])
+
+  @@index([affiliateId])
+  @@map("affiliate_withdrawals")
+}
+
+enum AffiliateStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum CommissionStatus {
+  PENDING
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+}
+
+
+model VipTier {
+  id              String        @id @default(uuid())
+  name            String        @db.VarChar(50)    // Bronze, Silver, Gold, Diamond, Legendary
+  minSpent        Decimal       @db.Decimal(15, 2) // tổng chi tiêu để đạt tier
+  discountPercent Decimal       @default(0.00) @db.Decimal(5, 2) // giảm giá khi mua acc
+  bonusQuanHuy    Int           @default(0)         // bonus QuanHuy mỗi lần nạp
+  spinBonus       Int           @default(0)         // lượt quay thêm mỗi tháng
+  color           String        @default("#ffffff") @db.VarChar(20)
+  icon            String?       @db.VarChar(50)
+  sortOrder       Int           @default(0)
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  memberships     VipMembership[]
+
+  @@map("vip_tiers")
+}
+
+model VipMembership {
+  id              String    @id @default(uuid())
+  userId          String    @unique
+  tierId          String
+  totalSpentSnap  Decimal   @db.Decimal(15, 2) // snapshot tổng chi tiêu khi tính tier
+  achievedAt      DateTime  @default(now())
+  expiresAt       DateTime? // null = không hết hạn (dựa theo tổng chi tiêu luỹ kế)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id])
+  tier            VipTier   @relation(fields: [tierId], references: [id])
+
+  @@index([userId])
+  @@map("vip_memberships")
+}
+
+model Wishlist {
+  id          String      @id @default(uuid())
+  userId      String
+  accountId   String
+  createdAt   DateTime    @default(now())
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account     GameAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, accountId])
+  @@index([userId])
+  @@index([accountId])
+  @@map("wishlists")
+}
+
+model Layaway {
+  id              String        @id @default(uuid())
+  layawayCode     String        @unique @db.VarChar(30)
+  userId          String
+  accountId       String        @unique  // mỗi acc chỉ có 1 layaway active
+  totalPrice      Decimal       @db.Decimal(15, 2)
+  depositAmount   Decimal       @db.Decimal(15, 2)  // số tiền đặt cọc (VD: 30%)
+  depositRate     Decimal       @db.Decimal(5, 2)   // % đặt cọc tại thời điểm tạo
+  remainingAmount Decimal       @db.Decimal(15, 2)  // còn lại phải trả
+  paidAmount      Decimal       @default(0.00) @db.Decimal(15, 2) // đã trả (bao gồm cọc)
+  status          LayawayStatus @default(PENDING_DEPOSIT)
+  dueDate         DateTime      // hạn chót thanh toán hết
+  note            String?       @db.Text
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?       @db.Text
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  user            User          @relation(fields: [userId], references: [id])
+  account         GameAccount   @relation(fields: [accountId], references: [id])
+  payments        LayawayPayment[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("layaways")
+}
+
+model LayawayPayment {
+  id          String    @id @default(uuid())
+  layawayId   String
+  amount      Decimal   @db.Decimal(15, 2)
+  type        String    @default("INSTALLMENT") @db.VarChar(20) // DEPOSIT | INSTALLMENT | FINAL
+  note        String?   @db.VarChar(255)
+  createdAt   DateTime  @default(now())
+  layaway     Layaway   @relation(fields: [layawayId], references: [id], onDelete: Cascade)
+
+  @@index([layawayId])
+  @@map("layaway_payments")
+}
+
+enum LayawayStatus {
+  PENDING_DEPOSIT   // chờ thanh toán cọc
+  ACTIVE            // đã cọc, đang trả dần
+  COMPLETED         // đã trả hết → acc được giao
+  CANCELLED         // huỷ (hoàn cọc tuỳ policy)
+  OVERDUE           // quá hạn
+}
+
+model InstallmentRequest {
+  id          String                    @id @default(uuid())
+  userId      String
+  accountId   String
+  phoneNumber String                    @db.VarChar(20)
+  message     String?                   @db.Text
+  status      InstallmentRequestStatus  @default(PENDING)
+  adminNote   String?                   @db.Text
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  user        User                      @relation(fields: [userId], references: [id])
+  account     GameAccount               @relation(fields: [accountId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("installment_requests")
+}
+
+enum InstallmentRequestStatus {
+  PENDING
+  CONTACTED
+  APPROVED
+  REJECTED
 }
