@@ -586,6 +586,12 @@ const createAccount = async (req, res) => {
         gameBindEmail: req.body.gameBindEmail || null,
         gameBindPhone: req.body.gameBindPhone || null,
         gameBindFacebook: req.body.gameBindFacebook || 'NONE',
+        installmentDays: req.body.installmentDays !== undefined && req.body.installmentDays !== ''
+          ? parseInt(req.body.installmentDays)
+          : null,
+        loginRevealPercent: req.body.loginRevealPercent !== undefined && req.body.loginRevealPercent !== ''
+          ? parseFloat(req.body.loginRevealPercent)
+          : null,
         isFeatured: req.body.isFeatured === 'true' || req.body.isFeatured === true,
         isNew: req.body.isNew === 'true' || req.body.isNew === true,
         isVerified: req.body.isVerified === 'true' || req.body.isVerified === true,
@@ -660,6 +666,13 @@ const updateAccount = async (req, res) => {
     if (req.body.gameBindEmail !== undefined) data.gameBindEmail = req.body.gameBindEmail || null
     if (req.body.gameBindPhone !== undefined) data.gameBindPhone = req.body.gameBindPhone || null
     if (req.body.gameBindFacebook !== undefined) data.gameBindFacebook = req.body.gameBindFacebook || 'NONE'
+
+    if (req.body.installmentDays !== undefined) {
+      data.installmentDays = req.body.installmentDays !== '' ? parseInt(req.body.installmentDays) : null
+    }
+    if (req.body.loginRevealPercent !== undefined) {
+      data.loginRevealPercent = req.body.loginRevealPercent !== '' ? parseFloat(req.body.loginRevealPercent) : null
+    }
 
     if (req.body.status !== undefined) data.status = req.body.status
     if (req.body.isFeatured !== undefined) data.isFeatured = req.body.isFeatured === 'true' || req.body.isFeatured === true

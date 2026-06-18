@@ -99,6 +99,13 @@ app.use(errorHandler)
 const PORT = process.env.PORT || 5000
 server.listen(PORT, () => logger.info(` Server running on port ${PORT} [${process.env.NODE_ENV}]`))
 
+// ── Cron: Kiểm tra layaway hết hạn mỗi giờ ──────────────────────────────────
+const { checkOverdueLayaways } = require('./controllers/layaway.controller')
+// Chạy ngay khi khởi động
+checkOverdueLayaways()
+// Sau đó chạy mỗi 1 giờ
+setInterval(checkOverdueLayaways, 60 * 60 * 1000)
+
 // ── Graceful shutdown ────────────────────────────────────────────────────────
 const prisma = require('./config/prisma')
 

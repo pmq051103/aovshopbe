@@ -90,6 +90,8 @@ model GameAccount {
   thumbnailUrl      String?                   @db.Text
   thumbnailId       String?                   @db.VarChar(255)
   tags              String?                   @db.Text
+  installmentDays   Int?                      // số ngày trả góp (admin nhập, null = không cho trả góp)
+  loginRevealPercent Decimal?                 @db.Decimal(5, 2) // % thanh toán để nhận user/pass (null = 100%)
   soldAt            DateTime?
   soldToId          String?
   createdAt         DateTime                  @default(now())
@@ -1210,6 +1212,8 @@ model Layaway {
   paidAmount      Decimal       @default(0.00) @db.Decimal(15, 2) // đã trả (bao gồm cọc)
   status          LayawayStatus @default(PENDING_DEPOSIT)
   dueDate         DateTime      // hạn chót thanh toán hết
+  contactEmail    String?       @db.VarChar(100) // email liên hệ user nhập khi đặt cọc
+  contactPhone    String?       @db.VarChar(20)  // sdt liên hệ user nhập khi đặt cọc
   note            String?       @db.Text
   completedAt     DateTime?
   cancelledAt     DateTime?

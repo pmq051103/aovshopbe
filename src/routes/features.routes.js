@@ -55,6 +55,7 @@ const {
   adminGetLayaways,
   adminRecordPayment,
   adminCancelLayaway,
+  adminSendReminderToUser,
 } = require('../controllers/layaway.controller')
 
 layawayRouter.post('/', authenticate, createLayaway)
@@ -67,6 +68,7 @@ layawayRouter.post('/:id/pay', authenticate, payLayaway)
 layawayRouter.get('/admin', authenticate, requireAdmin, adminGetLayaways)
 layawayRouter.post('/admin/:id/payment', authenticate, requireAdmin, adminRecordPayment)
 layawayRouter.patch('/admin/:id/cancel', authenticate, requireAdmin, adminCancelLayaway)
+layawayRouter.post('/admin/:id/send-reminder', authenticate, requireAdmin, adminSendReminderToUser)
 
 
 // ── INSTALLMENT ROUTES ────────────────────────────────────────────────────────
