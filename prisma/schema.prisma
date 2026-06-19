@@ -92,6 +92,7 @@ model GameAccount {
   tags              String?                   @db.Text
   installmentDays   Int?                      // số ngày trả góp (admin nhập, null = không cho trả góp)
   loginRevealPercent Decimal?                 @db.Decimal(5, 2) // % thanh toán để nhận user/pass (null = 100%)
+  minDepositPercent Decimal? @db.Decimal(5, 2) // % cọc tối thiểu (null = mặc định 30%)
   soldAt            DateTime?
   soldToId          String?
   createdAt         DateTime                  @default(now())

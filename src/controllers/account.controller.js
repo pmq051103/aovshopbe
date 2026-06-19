@@ -592,6 +592,9 @@ const createAccount = async (req, res) => {
         loginRevealPercent: req.body.loginRevealPercent !== undefined && req.body.loginRevealPercent !== ''
           ? parseFloat(req.body.loginRevealPercent)
           : null,
+        minDepositPercent: req.body.minDepositPercent !== undefined && req.body.minDepositPercent !== ''
+          ? parseFloat(req.body.minDepositPercent)
+          : null,
         isFeatured: req.body.isFeatured === 'true' || req.body.isFeatured === true,
         isNew: req.body.isNew === 'true' || req.body.isNew === true,
         isVerified: req.body.isVerified === 'true' || req.body.isVerified === true,
@@ -638,7 +641,7 @@ const updateAccount = async (req, res) => {
     // skinsData: mảng đầy đủ { skinName, heroName, rarity, templateId } từ selectedSkins
     let skinsData = null
     if (req.body.skinsData) {
-      try { skinsData = JSON.parse(req.body.skinsData) } catch {}
+      try { skinsData = JSON.parse(req.body.skinsData) } catch { }
     }
 
     const newImages = req.files?.map((f, i) => ({
@@ -673,6 +676,9 @@ const updateAccount = async (req, res) => {
     if (req.body.loginRevealPercent !== undefined) {
       data.loginRevealPercent = req.body.loginRevealPercent !== '' ? parseFloat(req.body.loginRevealPercent) : null
     }
+    if (req.body.minDepositPercent !== undefined) {
+  data.minDepositPercent = req.body.minDepositPercent !== '' ? parseFloat(req.body.minDepositPercent) : null
+}
 
     if (req.body.status !== undefined) data.status = req.body.status
     if (req.body.isFeatured !== undefined) data.isFeatured = req.body.isFeatured === 'true' || req.body.isFeatured === true
@@ -705,84 +711,84 @@ const updateAccount = async (req, res) => {
     }
 
     const account = await prisma.$transaction(async (tx) => {
-  if (skinsData !== null || skinNames !== null) {
-    await tx.accountSkin.deleteMany({
-      where: { accountId: req.params.id }
-    })
+      if (skinsData !== null || skinNames !== null) {
+        await tx.accountSkin.deleteMany({
+          where: { accountId: req.params.id }
+        })
 
-    const finalSkins = skinsData !== null
-      ? skinsData
-      : skinNames.map(name => ({
-          skinName: name,
-          heroName: null,
-          rarity: null,
-          templateId: null,
-        }))
+        const finalSkins = skinsData !== null
+          ? skinsData
+          : skinNames.map(name => ({
+            skinName: name,
+            heroName: null,
+            rarity: null,
+            templateId: null,
+          }))
 
-    if (finalSkins.length > 0) {
-      await tx.accountSkin.createMany({
-        data: finalSkins.map(s => ({
-          accountId: req.params.id,
-          skinName: s.skinName,
-          heroName: s.heroName || null,
-          tier: s.rarity || null,
-          templateId: s.templateId || null,
-          detectedBy: s.templateId ? 'AI' : 'MANUAL',
-          isConfirmed: true,
-        }))
-      })
-    }
-
-    data.skins = finalSkins.length
-  }
-
-  if (newImages.length > 0) {
-    await tx.gameAccountImage.deleteMany({
-      where: { accountId: req.params.id }
-    })
-
-    await tx.gameAccountImage.createMany({
-      data: newImages.map(img => ({
-        accountId: req.params.id,
-        url: img.url,
-        publicId: img.publicId,
-        sortOrder: img.sortOrder
-      }))
-    })
-  }
-
-  if (req.body.categoryId !== undefined) {
-    await tx.accountCategoryRelation.deleteMany({
-      where: { accountId: req.params.id }
-    })
-
-    if (req.body.categoryId) {
-      await tx.accountCategoryRelation.create({
-        data: {
-          accountId: req.params.id,
-          categoryId: req.body.categoryId
+        if (finalSkins.length > 0) {
+          await tx.accountSkin.createMany({
+            data: finalSkins.map(s => ({
+              accountId: req.params.id,
+              skinName: s.skinName,
+              heroName: s.heroName || null,
+              tier: s.rarity || null,
+              templateId: s.templateId || null,
+              detectedBy: s.templateId ? 'AI' : 'MANUAL',
+              isConfirmed: true,
+            }))
+          })
         }
-      })
-    }
-  }
 
-  return tx.gameAccount.update({
-    where: { id: req.params.id },
-    data,
-    include: {
-      images: { orderBy: { sortOrder: 'asc' } },
-      skins_rel: true,
-      categoryRelations: {
-        include: {
-          category: true
+        data.skins = finalSkins.length
+      }
+
+      if (newImages.length > 0) {
+        await tx.gameAccountImage.deleteMany({
+          where: { accountId: req.params.id }
+        })
+
+        await tx.gameAccountImage.createMany({
+          data: newImages.map(img => ({
+            accountId: req.params.id,
+            url: img.url,
+            publicId: img.publicId,
+            sortOrder: img.sortOrder
+          }))
+        })
+      }
+
+      if (req.body.categoryId !== undefined) {
+        await tx.accountCategoryRelation.deleteMany({
+          where: { accountId: req.params.id }
+        })
+
+        if (req.body.categoryId) {
+          await tx.accountCategoryRelation.create({
+            data: {
+              accountId: req.params.id,
+              categoryId: req.body.categoryId
+            }
+          })
         }
       }
-    }
-  })
-}, {
-  timeout: 15000,
-  maxWait: 10000
-})
+
+      return tx.gameAccount.update({
+        where: { id: req.params.id },
+        data,
+        include: {
+          images: { orderBy: { sortOrder: 'asc' } },
+          skins_rel: true,
+          categoryRelations: {
+            include: {
+              category: true
+            }
+          }
+        }
+      })
+    }, {
+      timeout: 15000,
+      maxWait: 10000
+    })
 
     if (newImages.length > 0) {
       const publicIds = new Set()

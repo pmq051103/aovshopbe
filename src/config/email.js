@@ -402,8 +402,136 @@ const notifyUserCardPurchase = async ({ user, cards, telco, denomination, quanti
   })
 }
 
+
+const getAdminEmail = async () => {
+  try {
+    const setting = await prisma.siteConfig.findUnique({ where: { key: 'admin_email' } })
+    return setting?.value || process.env.ADMIN_EMAIL || process.env.SMTP_FROM?.match(/<(.+?)>/)?.[1]
+  } catch {
+    return process.env.ADMIN_EMAIL || null
+  }
+}
+
+const formatDateVN = value => value ? new Date(value).toLocaleDateString('vi-VN') : 'Không có'
+
+const notifyLayawayOverdueAdmin = async ({ layaway }) => {
+  const adminEmail = await getAdminEmail()
+  if (!adminEmail) return false
+
+  const logo = await getSiteLogo()
+  const account = layaway.account || {}
+  const user = layaway.user || {}
+  const adminUrl = `${BRAND_URL}/admin/layaway`
+
+  const content = `
+    <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#344054;text-align:center;">
+      Đơn đặt cọc/trả góp đã quá hạn thanh toán. Admin cần kiểm tra và xử lý bảo vệ tài khoản game.
+    </p>
+
+    ${heroBlock({
+      label: 'Còn nợ',
+      value: formatMoney(layaway.remainingAmount),
+      sub: `Đã trả ${formatMoney(layaway.paidAmount)} / ${formatMoney(layaway.totalPrice)}`,
+      color: '#dc2626',
+    })}
+
+    ${infoCard([
+      { label: 'Mã đơn', value: layaway.layawayCode, color: '#dc2626' },
+      { label: 'Mã acc', value: account.code || 'N/A', color: '#7c3aed' },
+      { label: 'Tên acc', value: account.title || 'N/A' },
+      { label: 'Username game', value: account.gameUsername || 'N/A', color: '#1a2233' },
+      { label: 'Password game', value: account.gamePassword || 'N/A', color: '#1a2233' },
+      { label: 'Email bind', value: account.gameBindEmail || 'Không có' },
+      { label: 'SĐT bind', value: account.gameBindPhone || 'Không có' },
+      { label: 'Facebook bind', value: account.gameBindFacebook || 'NONE' },
+      { label: 'Người mua', value: user.displayName || user.username || 'N/A' },
+      { label: 'Email liên hệ', value: layaway.contactEmail || user.email || 'N/A', color: '#1976d2' },
+      { label: 'SĐT liên hệ', value: layaway.contactPhone || 'N/A' },
+      { label: 'Hạn thanh toán', value: formatDateVN(layaway.dueDate), color: '#dc2626' },
+    ])}
+
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:24px;"><tr><td>&nbsp;</td></tr></table>
+    ${ctaButton(adminUrl, 'Vào Admin kiểm tra')}
+    ${noticeBox('<b>Cần xử lý:</b> Kiểm tra tình trạng thanh toán và đổi thông tin tài khoản game nếu cần để bảo vệ acc.', 'warn')}
+  `
+
+  return sendMail({
+    to: adminEmail,
+    subject: `[AOV Shop] Đơn trả góp quá hạn ${layaway.layawayCode} - ${account.code || 'N/A'}`,
+    html: baseEmail({
+      logo,
+      title: 'ĐƠN TRẢ GÓP QUÁ HẠN',
+      subtitle: 'Một đơn đặt cọc/trả góp cần admin xử lý.',
+      badge: 'CẦN XỬ LÝ',
+      content,
+      footerText: 'Thông báo quản trị từ AOV Shop.',
+    }),
+    text: `Đơn ${layaway.layawayCode} đã quá hạn. Acc: ${account.code || 'N/A'}. Đã trả ${formatMoney(layaway.paidAmount)}, còn nợ ${formatMoney(layaway.remainingAmount)}.`,
+  })
+}
+
+const notifyLayawayReminderUser = async ({ layaway, type = 'REMINDER' }) => {
+  const email = layaway.contactEmail || layaway.user?.email
+  if (!email) return false
+
+  const logo = await getSiteLogo()
+  const isOverdue = type === 'OVERDUE'
+  const payUrl = `${BRAND_URL}/user/layaway`
+
+  const content = `
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#344054;">
+      Xin chào <b>${layaway.user?.displayName || layaway.user?.username || 'bạn'}</b>,
+      ${isOverdue
+        ? `đơn đặt cọc <b>${layaway.layawayCode}</b> của bạn đã <b style="color:#dc2626;">quá hạn thanh toán</b>. Shop sẽ xử lý theo chính sách nếu đơn không được hoàn tất.`
+        : `đơn đặt cọc <b>${layaway.layawayCode}</b> của bạn sắp đến hạn. Vui lòng thanh toán đúng hạn để tránh mất cọc.`
+      }
+    </p>
+
+    ${heroBlock({
+      label: isOverdue ? 'Số tiền còn nợ' : 'Cần thanh toán còn lại',
+      value: formatMoney(layaway.remainingAmount),
+      sub: `Đã trả ${formatMoney(layaway.paidAmount)} / ${formatMoney(layaway.totalPrice)}`,
+      color: isOverdue ? '#dc2626' : '#f59e0b',
+    })}
+
+    ${infoCard([
+      { label: 'Mã đơn', value: layaway.layawayCode, color: isOverdue ? '#dc2626' : '#f59e0b' },
+      { label: 'Tên acc', value: layaway.account?.title || 'N/A' },
+      { label: 'Đã trả', value: formatMoney(layaway.paidAmount), color: '#16a34a' },
+      { label: 'Còn lại', value: formatMoney(layaway.remainingAmount), color: '#dc2626' },
+      { label: 'Hạn thanh toán', value: formatDateVN(layaway.dueDate), color: '#f59e0b' },
+    ])}
+
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:24px;"><tr><td>&nbsp;</td></tr></table>
+    ${ctaButton(payUrl, 'Thanh toán ngay')}
+    ${noticeBox(isOverdue
+      ? 'Đơn đã quá hạn. Vui lòng liên hệ admin nếu bạn cần hỗ trợ xử lý đơn này.'
+      : 'Bạn nên thanh toán trước hạn để giữ tài khoản và tránh mất tiền cọc.', isOverdue ? 'warn' : 'info')}
+  `
+
+  return sendMail({
+    to: email,
+    subject: isOverdue
+      ? `[AOV Shop] Đơn đặt cọc ${layaway.layawayCode} đã quá hạn`
+      : `[AOV Shop] Nhắc thanh toán đơn đặt cọc ${layaway.layawayCode}`,
+    html: baseEmail({
+      logo,
+      title: isOverdue ? 'ĐƠN ĐẶT CỌC ĐÃ QUÁ HẠN' : 'NHẮC THANH TOÁN ĐẶT CỌC',
+      subtitle: isOverdue ? 'Đơn của bạn đã quá hạn thanh toán.' : 'Đơn của bạn sắp đến hạn thanh toán.',
+      badge: isOverdue ? 'QUÁ HẠN' : 'NHẮC NHỞ',
+      content,
+      footerText: 'Cảm ơn bạn đã tin tưởng AOV Shop.',
+    }),
+    text: isOverdue
+      ? `Đơn ${layaway.layawayCode} đã quá hạn. Còn lại ${formatMoney(layaway.remainingAmount)}. Thanh toán tại: ${payUrl}`
+      : `Đơn ${layaway.layawayCode} sắp đến hạn. Còn lại ${formatMoney(layaway.remainingAmount)}. Thanh toán tại: ${payUrl}`,
+  })
+}
+
 module.exports = {
   sendMail,
+  notifyLayawayOverdueAdmin,
+  notifyLayawayReminderUser,
   notifyAdminTopupOrder,
   notifyUserTopupCompleted,
   sendResetPasswordEmail,

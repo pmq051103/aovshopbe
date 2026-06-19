@@ -1,111 +1,7 @@
 const prisma = require('../config/prisma')
-const { sendMail } = require('../config/email')
+const { notifyLayawayOverdueAdmin, notifyLayawayReminderUser } = require('../config/email')
 
 // ── HELPERS ────────────────────────────────────────────────────────────────────
-
-const formatMoney = (value) => `${parseInt(value || 0).toLocaleString('vi-VN')}đ`
-
-// Lấy email admin từ env hoặc DB settings
-const getAdminEmail = async () => {
-  try {
-    const setting = await prisma.siteConfig.findUnique({ where: { key: 'admin_email' } })
-    return setting?.value || process.env.ADMIN_EMAIL || process.env.SMTP_FROM?.match(/<(.+?)>/)?.[1]
-  } catch {
-    return process.env.ADMIN_EMAIL || null
-  }
-}
-
-// Gửi email cho admin khi layaway hết hạn
-const sendOverdueEmailToAdmin = async (layaway) => {
-  const adminEmail = await getAdminEmail()
-  if (!adminEmail) return
-
-  const account = layaway.account
-  const user = layaway.user
-
-  await sendMail({
-    to: adminEmail,
-    subject: `[HẾT HẠN TRẢ GÓP] Đơn ${layaway.layawayCode} - ${account?.code}`,
-    html: `
-      <div style="font-family:sans-serif;max-width:600px;margin:auto;background:#111;color:#eee;border-radius:12px;overflow:hidden;">
-        <div style="background:#e74c3c;padding:20px;text-align:center;">
-          <h2 style="margin:0;color:#fff;">⚠️ Đơn Trả Góp Hết Hạn</h2>
-        </div>
-        <div style="padding:24px;">
-          <p>Đơn đặt cọc <b>${layaway.layawayCode}</b> đã hết hạn thanh toán. Cần xử lý đổi thông tin acc.</p>
-          
-          <table style="width:100%;border-collapse:collapse;margin:16px 0;">
-            <tr><td style="padding:8px;color:#aaa;width:40%;">Mã đơn</td><td style="padding:8px;font-weight:bold;color:#39ff14;">${layaway.layawayCode}</td></tr>
-            <tr style="background:#1a1a1a;"><td style="padding:8px;color:#aaa;">Mã acc</td><td style="padding:8px;font-weight:bold;">${account?.code || 'N/A'}</td></tr>
-            <tr><td style="padding:8px;color:#aaa;">Tên acc</td><td style="padding:8px;">${account?.title || 'N/A'}</td></tr>
-            <tr style="background:#1a1a1a;"><td style="padding:8px;color:#aaa;">Username game</td><td style="padding:8px;font-family:monospace;">${account?.gameUsername || 'N/A'}</td></tr>
-            <tr><td style="padding:8px;color:#aaa;">Password game</td><td style="padding:8px;font-family:monospace;">${account?.gamePassword || 'N/A'}</td></tr>
-            <tr style="background:#1a1a1a;"><td style="padding:8px;color:#aaa;">Email bind</td><td style="padding:8px;">${account?.gameBindEmail || 'Không có'}</td></tr>
-            <tr><td style="padding:8px;color:#aaa;">SĐT bind</td><td style="padding:8px;">${account?.gameBindPhone || 'Không có'}</td></tr>
-            <tr style="background:#1a1a1a;"><td style="padding:8px;color:#aaa;">Facebook bind</td><td style="padding:8px;">${account?.gameBindFacebook || 'NONE'}</td></tr>
-          </table>
-
-          <div style="background:#1a1a1a;border-radius:8px;padding:16px;margin:16px 0;">
-            <h4 style="color:#e74c3c;margin:0 0 8px;">Thông tin người mua</h4>
-            <div>Username: <b>${user?.username || 'N/A'}</b></div>
-            <div>Email liên hệ: <b>${layaway.contactEmail || user?.email || 'N/A'}</b></div>
-            <div>SĐT liên hệ: <b>${layaway.contactPhone || 'N/A'}</b></div>
-            <div>Đã trả: <b style="color:#39ff14;">${formatMoney(layaway.paidAmount)} / ${formatMoney(layaway.totalPrice)}</b></div>
-            <div>Còn nợ: <b style="color:#e74c3c;">${formatMoney(layaway.remainingAmount)}</b></div>
-          </div>
-
-          <p style="color:#e74c3c;font-weight:bold;">→ Vui lòng đổi thông tin tài khoản game ngay để bảo vệ acc.</p>
-        </div>
-      </div>
-    `,
-  })
-}
-
-// Gửi email nhắc user sắp/đã hết hạn
-const sendReminderEmailToUser = async (layaway, type = 'REMINDER') => {
-  const email = layaway.contactEmail || layaway.user?.email
-  if (!email) return false
-
-  const isOverdue = type === 'OVERDUE'
-  const subject = isOverdue
-    ? `[ĐÃ QUÁ HẠN] Đơn đặt cọc ${layaway.layawayCode} của bạn`
-    : `[NHẮC NHỞ] Đơn đặt cọc ${layaway.layawayCode} sắp đến hạn`
-
-  await sendMail({
-    to: email,
-    subject,
-    html: `
-      <div style="font-family:sans-serif;max-width:600px;margin:auto;background:#111;color:#eee;border-radius:12px;overflow:hidden;">
-        <div style="background:${isOverdue ? '#e74c3c' : '#f39c12'};padding:20px;text-align:center;">
-          <h2 style="margin:0;color:#fff;">${isOverdue ? '⚠️ Đơn Đã Quá Hạn' : '🔔 Nhắc Nhở Thanh Toán'}</h2>
-        </div>
-        <div style="padding:24px;">
-          <p>Xin chào <b>${layaway.user?.displayName || layaway.user?.username || 'bạn'}</b>,</p>
-          <p>${isOverdue
-            ? `Đơn đặt cọc <b>${layaway.layawayCode}</b> của bạn đã <b style="color:#e74c3c;">quá hạn thanh toán</b>. Shop sẽ xử lý đổi thông tin acc theo chính sách.`
-            : `Đơn đặt cọc <b>${layaway.layawayCode}</b> của bạn sắp đến hạn. Vui lòng thanh toán đúng hạn để tránh mất cọc.`
-          }</p>
-          
-          <table style="width:100%;border-collapse:collapse;margin:16px 0;">
-            <tr><td style="padding:8px;color:#aaa;width:40%;">Mã đơn</td><td style="padding:8px;font-weight:bold;color:#39ff14;">${layaway.layawayCode}</td></tr>
-            <tr style="background:#1a1a1a;"><td style="padding:8px;color:#aaa;">Tên acc</td><td style="padding:8px;">${layaway.account?.title || 'N/A'}</td></tr>
-            <tr><td style="padding:8px;color:#aaa;">Đã trả</td><td style="padding:8px;color:#39ff14;font-weight:bold;">${formatMoney(layaway.paidAmount)}</td></tr>
-            <tr style="background:#1a1a1a;"><td style="padding:8px;color:#aaa;">Còn lại</td><td style="padding:8px;color:#e74c3c;font-weight:bold;">${formatMoney(layaway.remainingAmount)}</td></tr>
-            <tr><td style="padding:8px;color:#aaa;">Hạn thanh toán</td><td style="padding:8px;color:#f39c12;font-weight:bold;">${new Date(layaway.dueDate).toLocaleDateString('vi-VN')}</td></tr>
-          </table>
-
-          <div style="text-align:center;margin:24px 0;">
-            <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/user/layaway" 
-               style="background:#39ff14;color:#111;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">
-              Thanh Toán Ngay
-            </a>
-          </div>
-        </div>
-      </div>
-    `,
-  })
-  return true
-}
 
 // Hoàn tất layaway - chuyển acc sang SOLD và tạo userOwnedAccount
 const completeLayawayAccount = async (tx, layaway) => {
@@ -187,10 +83,38 @@ const createLayaway = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Tài khoản này đã có người đặt cọc' })
     }
 
+    // ── Validate % cọc tối thiểu theo từng acc (minDepositPercent, null = mặc định 30%) ──
+    const minPercent = account.minDepositPercent != null
+      ? Number(account.minDepositPercent)
+      : 30
+
+    const requestedRate = Number(depositRate)
+
+    if (!requestedRate || isNaN(requestedRate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tỷ lệ đặt cọc không hợp lệ',
+      })
+    }
+
+    if (requestedRate < minPercent) {
+      return res.status(400).json({
+        success: false,
+        message: `Số tiền cọc tối thiểu là ${minPercent}% giá trị tài khoản`,
+      })
+    }
+
+    if (requestedRate > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tỷ lệ đặt cọc không được vượt quá 100%',
+      })
+    }
+
     const user = await prisma.user.findUnique({ where: { id: userId } })
 
     const totalPrice = Number(account.price)
-    const depositAmount = Math.ceil((totalPrice * Number(depositRate)) / 100)
+    const depositAmount = Math.ceil((totalPrice * requestedRate) / 100)
     const remainingAmount = totalPrice - depositAmount
 
     if (Number(user.balance) < depositAmount) {
@@ -227,7 +151,7 @@ const createLayaway = async (req, res) => {
           accountId,
           totalPrice,
           depositAmount,
-          depositRate: Number(depositRate),
+          depositRate: requestedRate,
           remainingAmount,
           paidAmount: depositAmount,
           status: depositAmount >= totalPrice ? 'COMPLETED' : 'ACTIVE',
@@ -245,6 +169,7 @@ const createLayaway = async (req, res) => {
               thumbnailUrl: true,
               installmentDays: true,
               loginRevealPercent: true,
+              minDepositPercent: true,
             },
           },
         },
@@ -278,9 +203,9 @@ const createLayaway = async (req, res) => {
 
       return created
     }, {
-  timeout: 15000,
-  maxWait: 10000,
-})
+      timeout: 15000,
+      maxWait: 10000,
+    })
 
     res.json({
       success: true,
@@ -413,11 +338,22 @@ const getMyLayaways = async (req, res) => {
       },
     })
 
+    const maskEmail = (email) => {
+      if (!email) return null
+      const [name, domain] = email.split('@')
+      if (!domain) return email
+      return `${name.slice(0, 2)}****${name.slice(-1)}@${domain}`
+    }
+
+    const maskPhone = (phone) => {
+      if (!phone) return null
+      return `${phone.slice(0, 1)}******${phone.slice(-3)}`
+    }
+
     const data = layaways.map((layaway) => {
       const paidPercent =
         (Number(layaway.paidAmount || 0) / Number(layaway.totalPrice || 1)) * 100
 
-      // Dùng loginRevealPercent từ acc, mặc định 100% nếu không có
       const revealThreshold = layaway.account?.loginRevealPercent
         ? Number(layaway.account.loginRevealPercent)
         : 100
@@ -428,20 +364,24 @@ const getMyLayaways = async (req, res) => {
 
       const isCompleted = layaway.status === 'COMPLETED'
 
-      // Điều kiện xem thông tin: hoàn tất HOẶC đã đạt % theo loginRevealPercent VÀ có bind info
+      // Đạt threshold (cọc/trả góp đủ %) → chỉ unlock username/password
       const canShowLogin =
         isCompleted || (paidPercent >= revealThreshold && hasBindInfo)
+
+      // Bind info (email/SĐT/FB) CHỈ hiện khi COMPLETED, và luôn ở dạng mask
+      const canShowBindInfo = isCompleted
 
       return {
         ...layaway,
         paidPercent,
         canShowLogin,
-        revealThreshold, // trả về để frontend hiển thị
+        canShowBindInfo,
+        revealThreshold,
 
         accountHoldMessage:
           !isCompleted &&
-          paidPercent >= revealThreshold &&
-          !hasBindInfo
+            paidPercent >= revealThreshold &&
+            !hasBindInfo
             ? 'Acc này hiện không có email hoặc SĐT bind. Vui lòng liên hệ admin để trao đổi nếu muốn cầm acc chơi trước.'
             : null,
 
@@ -449,9 +389,10 @@ const getMyLayaways = async (req, res) => {
           ...layaway.account,
           gameUsername: canShowLogin ? layaway.account?.gameUsername : null,
           gamePassword: canShowLogin ? layaway.account?.gamePassword : null,
-          gameBindEmail: canShowLogin ? layaway.account?.gameBindEmail : null,
-          gameBindPhone: canShowLogin ? layaway.account?.gameBindPhone : null,
-          gameBindFacebook: canShowLogin ? layaway.account?.gameBindFacebook : null,
+          // Email/SĐT/FB: chỉ trả về (dạng mask) khi đã COMPLETED, ngược lại null hoàn toàn
+          gameBindEmail: canShowBindInfo ? maskEmail(layaway.account?.gameBindEmail) : null,
+          gameBindPhone: canShowBindInfo ? maskPhone(layaway.account?.gameBindPhone) : null,
+          gameBindFacebook: canShowBindInfo ? layaway.account?.gameBindFacebook : null,
         },
       }
     })
@@ -559,7 +500,7 @@ const adminRecordPayment = async (req, res) => {
 
       const newStatus = isFullyPaid ? 'COMPLETED'
         : type === 'DEPOSIT' ? 'ACTIVE'
-        : layaway.status
+          : layaway.status
 
       const updated = await tx.layaway.update({
         where: { id },
@@ -629,7 +570,7 @@ const adminSendReminderToUser = async (req, res) => {
     })
     if (!layaway) return res.status(404).json({ success: false, message: 'Không tìm thấy đơn' })
 
-    const sent = await sendReminderEmailToUser(layaway, type)
+    const sent = await notifyLayawayReminderUser({ layaway, type })
     if (!sent) {
       return res.status(400).json({ success: false, message: 'Không có email liên hệ của user' })
     }
@@ -669,7 +610,7 @@ const checkOverdueLayaways = async () => {
       })
 
       // Gửi email cho admin với full thông tin acc
-      await sendOverdueEmailToAdmin(layaway)
+      await notifyLayawayOverdueAdmin({ layaway })
     }
 
     if (overdueLayaways.length > 0) {
