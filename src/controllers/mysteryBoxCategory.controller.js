@@ -1,6 +1,7 @@
 const prisma = require('../config/prisma')
 const logger = require('../config/logger')
 const { emitToAll } = require('../config/socket')
+const { getUserVipDiscounts } = require('./vip.controller')
 
 // ── USER ──────────────────────────────────────────────────────────────────────
 
@@ -181,7 +182,13 @@ const openMysteryBox = async (req, res) => {
     if (!category) return res.status(404).json({ success: false, message: 'Category không tồn tại hoặc đã tắt' })
 
     const user = await prisma.user.findUnique({ where: { id: userId } })
-    const price = parseFloat(category.price)
+    const originalPrice = parseFloat(category.price)
+
+    // ── VIP discount cho túi mù (theo hạng VIP hiện tại của user) ──
+    const { boxPercent: vipPercent, tier: vipTier } = await getUserVipDiscounts(userId)
+    const vipDiscountAmount = Math.round(originalPrice * vipPercent / 100)
+    const price = Math.max(0, originalPrice - vipDiscountAmount)
+
     if (parseFloat(user.balance) < price) {
       return res.status(400).json({
         success: false,
@@ -261,7 +268,10 @@ const openMysteryBox = async (req, res) => {
             gameBindInfo: selectedAccount.gameBindInfo,
             categoryName: category.name,
             categoryThumbnail: category.thumbnail,
-            pricePaid: price
+            originalPrice,
+            pricePaid: price,
+            vipDiscountAmount,
+            vipTierName: vipTier?.name || null
           })
         }
       })
@@ -283,7 +293,7 @@ const openMysteryBox = async (req, res) => {
           amount: -price,
           balanceBefore: user.balance,
           balanceAfter: parseFloat(updatedUser.balance),
-          description: `Mở ${category.name} → Acc ${selectedAccount.code} (${selectedAccount.rarity})`,
+          description: `Mở ${category.name} → Acc ${selectedAccount.code} (${selectedAccount.rarity})${vipDiscountAmount > 0 ? ` (VIP -${vipDiscountAmount.toLocaleString('vi-VN')}đ)` : ''}`,
           referenceId: history.id
         }
       })
@@ -759,6 +769,11 @@ const adminGetCategoryStats = async (req, res) => {
       where: { categoryId: id, isSold: false }
     })
 
+    const revenueAgg = await prisma.mysteryBoxOpenHistory.aggregate({
+      where: { categoryId: id },
+      _sum: { pricePaid: true }
+    })
+
     res.json({
       success: true,
       data: {
@@ -766,7 +781,7 @@ const adminGetCategoryStats = async (req, res) => {
         rarityStats,
         recentOpenings,
         availableCount,
-        totalRevenue: category._count.openHistories * parseFloat(category.price)
+        totalRevenue: parseFloat(revenueAgg._sum.pricePaid || 0)
       }
     })
   } catch (e) {

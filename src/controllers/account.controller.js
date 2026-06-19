@@ -1,6 +1,7 @@
 const { deleteImage } = require('../config/cloudinary')
 const { emitToAll, emitToAdmins } = require('../config/socket')
 const prisma = require('../config/prisma')
+const { getUserVipDiscounts } = require('./vip.controller')
 
 const getAccounts = async (req, res) => {
   try {
@@ -282,8 +283,14 @@ const buyAccount = async (req, res) => {
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } })
 
+    // ── VIP discount (theo hạng VIP hiện tại của user) ──
+    const { accPercent: vipPercent, tier: vipTier } = await getUserVipDiscounts(req.user.id)
+    const originalPrice = parseFloat(account.price)
+    const vipDiscountAmount = Math.round(originalPrice * vipPercent / 100)
+    const priceAfterVip = Math.max(0, originalPrice - vipDiscountAmount)
+
     let coupon = null
-    let discountAmount = 0
+    let couponDiscountAmount = 0
 
     if (couponCode) {
       coupon = await prisma.coupon.findUnique({ where: { code: couponCode.toUpperCase() } })
@@ -307,16 +314,18 @@ const buyAccount = async (req, res) => {
       if (userUsage)
         return res.status(400).json({ success: false, message: 'Bạn đã sử dụng mã giảm giá này rồi' })
 
+      // Coupon áp dụng trên phần giá đã trừ VIP (cộng dồn 2 loại ưu đãi)
       if (coupon.type === 'PERCENT') {
-        discountAmount = parseFloat(account.price) * parseFloat(coupon.value) / 100
-        if (coupon.maxDiscount) discountAmount = Math.min(discountAmount, parseFloat(coupon.maxDiscount))
+        couponDiscountAmount = priceAfterVip * parseFloat(coupon.value) / 100
+        if (coupon.maxDiscount) couponDiscountAmount = Math.min(couponDiscountAmount, parseFloat(coupon.maxDiscount))
       } else if (coupon.type === 'FIXED') {
-        discountAmount = Math.min(parseFloat(coupon.value), parseFloat(account.price))
+        couponDiscountAmount = Math.min(parseFloat(coupon.value), priceAfterVip)
       }
-      discountAmount = Math.round(discountAmount)
+      couponDiscountAmount = Math.round(couponDiscountAmount)
     }
 
-    const finalPrice = Math.max(0, parseFloat(account.price) - discountAmount)
+    const discountAmount = vipDiscountAmount + couponDiscountAmount
+    const finalPrice = Math.max(0, originalPrice - discountAmount)
 
     if (parseFloat(user.balance) < finalPrice) {
       return res.status(400).json({
@@ -403,6 +412,9 @@ const buyAccount = async (req, res) => {
             price: account.price,
             finalPrice,
             discountAmount,
+            vipDiscountAmount,
+            couponDiscountAmount,
+            vipTierName: vipTier?.name || null,
             thumbnailUrl: account.thumbnailUrl,
             images: account.images?.map(i => ({ url: i.url, sortOrder: i.sortOrder })) || [],
             gameUsername: account.gameUsername,
@@ -423,7 +435,7 @@ const buyAccount = async (req, res) => {
           amount: -finalPrice,
           balanceBefore: user.balance,
           balanceAfter: updatedUser.balance,
-          description: `Mua acc ${account.code}${discountAmount > 0 ? ` (giảm ${discountAmount.toLocaleString('vi-VN')}đ)` : ''}`,
+          description: `Mua acc ${account.code}${vipDiscountAmount > 0 ? ` (VIP -${vipDiscountAmount.toLocaleString('vi-VN')}đ)` : ''}${couponDiscountAmount > 0 ? ` (coupon -${couponDiscountAmount.toLocaleString('vi-VN')}đ)` : ''}`,
           //gameAccountId: account.id
         }
       })
@@ -517,16 +529,33 @@ const previewCoupon = async (req, res) => {
       })
     }
     let discount = 0
+    const originalPrice = parseFloat(account.price)
+    const { accPercent: vipPercent, tier: vipTier } = await getUserVipDiscounts(req.user.id)
+    const vipDiscountAmount = Math.round(originalPrice * vipPercent / 100)
+    const priceAfterVip = Math.max(0, originalPrice - vipDiscountAmount)
+
     if (coupon.type === 'PERCENT') {
-      discount = parseFloat(account.price) * parseFloat(coupon.value) / 100
+      discount = priceAfterVip * parseFloat(coupon.value) / 100
       if (coupon.maxDiscount) discount = Math.min(discount, parseFloat(coupon.maxDiscount))
     } else if (coupon.type === 'FIXED') {
-      discount = Math.min(parseFloat(coupon.value), parseFloat(account.price))
+      discount = Math.min(parseFloat(coupon.value), priceAfterVip)
     }
     discount = Math.round(discount)
-    const finalPrice = Math.max(0, parseFloat(account.price) - discount)
+    const totalDiscount = vipDiscountAmount + discount
+    const finalPrice = Math.max(0, originalPrice - totalDiscount)
 
-    res.json({ success: true, data: { coupon, discount, finalPrice, originalPrice: account.price } })
+    res.json({
+      success: true,
+      data: {
+        coupon,
+        discount,
+        vipDiscount: vipDiscountAmount,
+        vipTierName: vipTier?.name || null,
+        totalDiscount,
+        finalPrice,
+        originalPrice: account.price
+      }
+    })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }
 

@@ -1,5 +1,6 @@
 const { emitToAll, emitToUser } = require('../config/socket')
 const prisma = require('../config/prisma')
+const { getUserVipDiscounts } = require('./vip.controller')
 
 const selectReward = (rewards) => {
   const random = Math.random(); let c = 0
@@ -11,7 +12,29 @@ const getWheel = async (req, res) => {
   try {
     const wheel = await prisma.luckyWheel.findFirst({ where: { isActive: true }, include: { rewards: { where: { isActive: true }, orderBy: { sortOrder: 'asc' } } } })
     if (!wheel) return res.status(404).json({ success: false, message: 'Vòng quay không có sẵn' })
-    res.json({ success: true, data: wheel })
+
+    // Tính spinCost sau VIP nếu user đã login
+    let vipSpinCost = parseFloat(wheel.spinCost)
+    let vipDiscountPercent = 0
+    let vipTierName = null
+    if (req.user?.id) {
+      const { wheelPercent, tier } = await getUserVipDiscounts(req.user.id)
+      if (wheelPercent > 0) {
+        vipDiscountPercent = wheelPercent
+        vipTierName = tier?.name || null
+        vipSpinCost = Math.max(0, Math.round(parseFloat(wheel.spinCost) * (1 - wheelPercent / 100)))
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...wheel,
+        vipSpinCost,
+        vipDiscountPercent,
+        vipTierName,
+      }
+    })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }
 

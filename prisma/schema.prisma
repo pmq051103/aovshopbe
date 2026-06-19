@@ -178,7 +178,7 @@ model LuckyWheelReward {
   rewardAccountId  String?  @db.VarChar(255)  // ID acc game trao thưởng
   rewardSpinCount  Int?                        // Số lượt quay thưởng
   couponCode       String?  @db.VarChar(50)   // Mã coupon trao thưởng
-  quanHuyAmount    Int?   
+  quanHuyAmount    Int?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   wheel       LuckyWheel     @relation(fields: [wheelId], references: [id], onDelete: Cascade)
@@ -344,7 +344,7 @@ model Notification {
   type      NotificationType
   title     String           @db.VarChar(255)
   message   String           @db.Text
-  data      Json?        
+  data      Json?
   isRead    Boolean          @default(false)
   readAt    DateTime?
   createdAt DateTime         @default(now())
@@ -679,6 +679,7 @@ enum TransactionType {
   REWARD
   REFUND
   TOPUP_PURCHASE
+  VIP_BONUS
 }
 
 enum TransactionStatus {
@@ -712,6 +713,7 @@ enum NotificationType {
   MYSTERY_BOX
   ANNOUNCEMENT
   REFUND
+  VIP
 }
 
 enum OrderStatus {
@@ -1157,7 +1159,10 @@ model VipTier {
   id              String        @id @default(uuid())
   name            String        @db.VarChar(50)    // Bronze, Silver, Gold, Diamond, Legendary
   minSpent        Decimal       @db.Decimal(15, 2) // tổng chi tiêu để đạt tier
-  discountPercent Decimal       @default(0.00) @db.Decimal(5, 2) // giảm giá khi mua acc
+  discountPercent     Decimal   @default(0.00) @db.Decimal(5, 2) // giảm giá khi mua acc
+  discountBoxPercent  Decimal   @default(0.00) @db.Decimal(5, 2) // giảm giá khi mua túi mù
+  discountCardPercent Decimal   @default(0.00) @db.Decimal(5, 2) // giảm giá khi mua thẻ cào
+  discountWheelPercent Decimal  @default(0.00) @db.Decimal(5, 2) // giảm giá chi phí quay vòng quay
   bonusQuanHuy    Int           @default(0)         // bonus QuanHuy mỗi lần nạp
   spinBonus       Int           @default(0)         // lượt quay thêm mỗi tháng
   color           String        @default("#ffffff") @db.VarChar(20)

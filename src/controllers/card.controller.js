@@ -4,6 +4,7 @@ const prisma = require('../config/prisma')
 const { deleteImage } = require('../config/cloudinary')
 const { emitToUser, emitToAdmins } = require('../config/socket')
 const { notifyUserCardPurchase } = require('../config/email')
+const { getUserVipDiscounts } = require('./vip.controller')
 
 // ── CHARGING: User nạp thẻ vào số dư ─────────────────────────────
 const GT_URL = process.env.CARD_CHARGING_URL || 'https://thesieure.com/chargingws/v2'
@@ -1112,7 +1113,12 @@ const buyCard = async (req, res) => {
     }
 
     const denom = parseInt(config.denomination)
-    const unitPrice = Math.round(denom * (1 - parseFloat(config.buyDiscount) / 100))
+
+    // ── VIP discount cho mua thẻ (cộng dồn với buyDiscount sẵn có của loại thẻ) ──
+    const { cardPercent: vipPercent, tier: vipTier } = await getUserVipDiscounts(req.user.id)
+    const baseDiscountPercent = parseFloat(config.buyDiscount)
+    const totalDiscountPercent = baseDiscountPercent + vipPercent
+    const unitPrice = Math.round(denom * (1 - totalDiscountPercent / 100))
     const totalPrice = unitPrice * qty
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } })
@@ -1140,7 +1146,7 @@ const buyCard = async (req, res) => {
           cardConfigId: config.id,
           telco: config.telco,
           denomination: denom,
-          buyDiscount: config.buyDiscount,
+          buyDiscount: totalDiscountPercent,
           unitPrice,
           quantity: qty,
           totalPrice,
@@ -1157,7 +1163,7 @@ const buyCard = async (req, res) => {
           amount: -totalPrice,
           balanceBefore: user.balance,
           balanceAfter: updated.balance,
-          description: `Mua ${qty} thẻ ${config.telcoLabel || config.telco} ${denom.toLocaleString('vi-VN')}đ`,
+          description: `Mua ${qty} thẻ ${config.telcoLabel || config.telco} ${denom.toLocaleString('vi-VN')}đ${vipPercent > 0 ? ` (VIP -${vipPercent}%)` : ''}`,
           referenceId: p.id,
         },
       })
