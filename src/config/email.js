@@ -476,7 +476,7 @@ const notifyLayawayReminderUser = async ({ layaway, type = 'REMINDER' }) => {
 
   const logo = await getSiteLogo()
   const isOverdue = type === 'OVERDUE'
-  const payUrl = `${BRAND_URL}/user/layaway`
+  const payUrl = `${BRAND_URL}/layaway`
 
   const content = `
     <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#344054;">
