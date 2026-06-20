@@ -7,6 +7,7 @@ const { uploadCardThumbnail } = require('../config/cloudinary')
 // ── Admin ─────────────────────────────────────────────────────────────────────
 router.get('/admin/configs',                   protect, adminOnly, ctrl.adminGetConfigs)
 router.post('/admin/configs',                  protect, adminOnly, uploadCardThumbnail.single('thumbnail'), ctrl.adminCreateConfig)
+router.post('/admin/configs/bulk',             protect, adminOnly, uploadCardThumbnail.single('thumbnail'), ctrl.adminBulkCreateConfig)
 router.put('/admin/configs/:id',               protect, adminOnly, uploadCardThumbnail.single('thumbnail'), ctrl.adminUpdateConfig)
 router.delete('/admin/configs/:id',            protect, adminOnly, ctrl.adminDeleteConfig)
 router.delete('/admin/configs/:id/thumbnail',  protect, adminOnly, ctrl.adminDeleteConfigThumbnail)

@@ -326,12 +326,23 @@ const adminDeleteTier = async (req, res) => {
 
 const adminGetMembers = async (req, res) => {
   try {
-    const { tierId, page = 1, limit = 20 } = req.query;
+    const { tierId, search, page = 1, limit = 20 } = req.query;
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
 
-    const where = tierId ? { tierId } : {};
+    const where = {};
+    if (tierId && tierId !== "ALL") where.tierId = tierId;
+
+    if (search && search.trim()) {
+      where.user = {
+        OR: [
+          { username: { contains: search.trim() } },
+          { displayName: { contains: search.trim() } },
+          { email: { contains: search.trim() } },
+        ],
+      };
+    }
 
     const [total, members] = await Promise.all([
       prisma.vipMembership.count({ where }),

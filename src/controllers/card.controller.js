@@ -138,6 +138,93 @@ const adminCreateConfig = async (req, res) => {
   }
 }
 
+// Tạo nhiều mệnh giá cùng lúc cho 1 telco (mỗi mệnh giá có chiết khấu riêng).
+// Dòng nào đã tồn tại (trùng telco + mệnh giá) sẽ bị bỏ qua, không chặn các dòng còn lại.
+// Body: { telco, telcoLabel, sortOrder, items: [{ denomination, depositEnabled, depositDiscount, buyEnabled, buyDiscount }] }
+// File ảnh (nếu có) dùng chung cho tất cả mệnh giá thuộc telco này.
+const adminBulkCreateConfig = async (req, res) => {
+  try {
+    const { telco, telcoLabel, sortOrder } = req.body
+    let items = req.body.items
+
+    if (!telco) return res.status(400).json({ success: false, message: 'Thiếu telco' })
+    if (typeof items === 'string') {
+      try { items = JSON.parse(items) } catch { items = [] }
+    }
+    if (!Array.isArray(items) || items.length === 0)
+      return res.status(400).json({ success: false, message: 'Cần ít nhất 1 mệnh giá' })
+
+    const telcoKey = telco.toUpperCase().trim().replace(/\s+/g, '_')
+
+    // Dùng ảnh mới upload, hoặc kế thừa ảnh đã có của telco này (nếu chưa có ảnh nào upload)
+    const existingTelcoConfig = await prisma.cardConfig.findFirst({
+      where: { telco: telcoKey, thumbnailUrl: { not: null } },
+      select: { thumbnailUrl: true, thumbnailPublicId: true },
+    })
+
+    let thumbnailUrl = null
+    let thumbnailPublicId = null
+    if (req.file) {
+      thumbnailUrl = req.file.path
+      thumbnailPublicId = req.file.filename
+    } else if (existingTelcoConfig) {
+      thumbnailUrl = existingTelcoConfig.thumbnailUrl
+      thumbnailPublicId = existingTelcoConfig.thumbnailPublicId
+    }
+
+    const created = []
+    const skipped = []
+
+    for (const item of items) {
+      const denom = parseFloat(item.denomination)
+      if (!denom || denom <= 0) {
+        skipped.push({ denomination: item.denomination, reason: 'Mệnh giá không hợp lệ' })
+        continue
+      }
+
+      const existed = await prisma.cardConfig.findUnique({
+        where: { telco_denomination: { telco: telcoKey, denomination: denom } },
+      })
+      if (existed) {
+        skipped.push({ denomination: denom, reason: 'Đã tồn tại' })
+        continue
+      }
+
+      const config = await prisma.cardConfig.create({
+        data: {
+          telco: telcoKey,
+          telcoLabel: telcoLabel?.trim() || telco.trim(),
+          denomination: denom,
+          depositEnabled: item.depositEnabled !== false && item.depositEnabled !== 'false',
+          depositDiscount: parseFloat(item.depositDiscount ?? 27),
+          buyEnabled: item.buyEnabled !== false && item.buyEnabled !== 'false',
+          buyDiscount: parseFloat(item.buyDiscount ?? 10),
+          sortOrder: parseInt(item.sortOrder ?? sortOrder ?? 0),
+          thumbnailUrl,
+          thumbnailPublicId,
+        },
+      })
+      created.push(config)
+    }
+
+    // Nếu vừa upload ảnh mới, đồng bộ ảnh đó cho toàn bộ mệnh giá khác cùng telco (kể cả mệnh giá có từ trước)
+    if (req.file && created.length > 0) {
+      await prisma.cardConfig.updateMany({
+        where: { telco: telcoKey, id: { notIn: created.map(c => c.id) } },
+        data: { thumbnailUrl, thumbnailPublicId },
+      })
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `Đã tạo ${created.length} mệnh giá${skipped.length ? `, bỏ qua ${skipped.length} mệnh giá trùng/lỗi` : ''}`,
+      data: { created, skipped },
+    })
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message })
+  }
+}
+
 const adminUpdateConfig = async (req, res) => {
   try {
     const {
@@ -1630,6 +1717,7 @@ const adminResendPurchase = async (req, res) => {
 module.exports = {
   adminGetConfigs,
   adminCreateConfig,
+  adminBulkCreateConfig,
   adminUpdateConfig,
   adminDeleteConfig,
   adminDeleteConfigThumbnail,
