@@ -1,6 +1,7 @@
 const PayOS = require('@payos/node');
 const { emitToUser, emitToAdmins } = require('../config/socket');
 const prisma = require('../config/prisma')
+const { markReferralStep2 } = require('../services/affiliate.service')
 
 const payos = new PayOS(
   process.env.PAYOS_CLIENT_ID,
@@ -239,6 +240,9 @@ const webhook = async (req, res) => {
 
     console.log('[PayOS Webhook] ✅ Deposit completed:', deposit.id, 'user:', deposit.userId);
 
+    // Đánh dấu bước 2 (nạp tiền lần đầu) cho referral nếu user này được giới thiệu
+    await markReferralStep2(deposit.userId);
+
     // Bước 6: Thông báo real-time qua Socket.IO
     emitToUser(deposit.userId, 'deposit:success', {
       amount: deposit.amount,
@@ -302,6 +306,10 @@ const confirmDeposit = async (req, res) => {
 
     emitToUser(deposit.userId, 'deposit:success', { amount: deposit.amount });
     emitToUser(deposit.userId, 'balance:update', {});
+
+    // Đánh dấu bước 2 (nạp tiền lần đầu) cho referral nếu user này được giới thiệu
+    await markReferralStep2(deposit.userId);
+
     res.json({ success: true, message: 'Xác nhận nạp tiền thành công' });
   } catch (error) {
     console.error('confirmDeposit error:', error);

@@ -2,6 +2,7 @@ const { deleteImage } = require('../config/cloudinary')
 const { emitToAll, emitToAdmins } = require('../config/socket')
 const prisma = require('../config/prisma')
 const { getUserVipDiscounts } = require('./vip.controller')
+const { processReferralPurchase } = require('../services/affiliate.service')
 
 const getAccounts = async (req, res) => {
   try {
@@ -458,6 +459,9 @@ const buyAccount = async (req, res) => {
     emitToAdmins('admin:new_order', { accountId: account.id, code: account.code })
     const io = req.app.get('io')
     io?.to(`user:${req.user.id}`).emit('notification', { type: 'PURCHASE', title: 'Mua thành công!' })
+
+    // Ghi nhận hoa hồng CTV nếu người mua được giới thiệu
+    await processReferralPurchase(req.user.id, finalPrice, result.order.id)
 
     res.json({
       success: true,

@@ -4,7 +4,8 @@ const prisma = require('../config/prisma')
 const { deleteImage } = require('../config/cloudinary')
 const { emitToUser, emitToAdmins } = require('../config/socket')
 const { notifyUserCardPurchase } = require('../config/email')
-const { getUserVipDiscounts } = require('./vip.controller')
+const { getUserVipDiscounts, recalculateVip } = require('./vip.controller')
+const { processReferralPurchase } = require('../services/affiliate.service')
 
 // ── CHARGING: User nạp thẻ vào số dư ─────────────────────────────
 const GT_URL = process.env.CARD_CHARGING_URL || 'https://thesieure.com/chargingws/v2'
@@ -1137,7 +1138,7 @@ const buyCard = async (req, res) => {
     const purchase = await prisma.$transaction(async tx => {
       const updated = await tx.user.update({
         where: { id: req.user.id },
-        data: { balance: { decrement: totalPrice } },
+        data: { balance: { decrement: totalPrice }, totalSpent: { increment: totalPrice } },
       })
 
       const p = await tx.cardPurchase.create({
@@ -1172,6 +1173,9 @@ const buyCard = async (req, res) => {
 
       return p
     })
+
+    // Cập nhật VIP sau khi mua thẻ
+    recalculateVip(req.user.id).catch(err => console.error('recalculateVip after card purchase:', err))
 
     const serviceCode = SERVICE_CODE_MAP[config.telco] || config.telcoLabel || config.telco
 
@@ -1265,6 +1269,9 @@ const buyCard = async (req, res) => {
         where: { id: req.user.id },
         select: { balance: true },
       })
+
+      // Ghi nhận hoa hồng CTV nếu người mua được giới thiệu
+      await processReferralPurchase(req.user.id, totalPrice, purchase.id)
 
       return res.json({
         success: true,

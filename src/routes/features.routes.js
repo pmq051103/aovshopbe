@@ -4,18 +4,26 @@ const { protect: authenticate, adminOnly: requireAdmin } = require('../middlewar
 // ── AFFILIATE ROUTES ──────────────────────────────────────────────────────────
 const affiliateRouter = express.Router()
 const {
-  applyAffiliate, getMyAffiliate, requestWithdrawal, validateAffiliateCode,
-  adminGetAffiliates, adminApproveAffiliate, adminProcessWithdrawal
+  applyAffiliate, getMyAffiliate, validateAffiliateCode,
+  adminGetAffiliates, adminApproveAffiliate, adminGetAffiliateDetail,
+  getAffiliateTiers, adminGetAllTiers,
+  adminCreateTier: adminCreateAffiliateTier,
+  adminUpdateTier: adminUpdateAffiliateTier,
+  adminDeleteTier: adminDeleteAffiliateTier
 } = require('../controllers/affiliate.controller')
 
 affiliateRouter.get('/validate/:code', validateAffiliateCode)                          // public
+affiliateRouter.get('/tiers', getAffiliateTiers)                                       // public — bảng bậc hoa hồng
 affiliateRouter.post('/apply', authenticate, applyAffiliate)                           // user đăng ký CTV
 affiliateRouter.get('/me', authenticate, getMyAffiliate)                               // thông tin CTV của tôi
-affiliateRouter.post('/withdraw', authenticate, requestWithdrawal)                     // yêu cầu rút tiền
 
 affiliateRouter.get('/admin/list', authenticate, requireAdmin, adminGetAffiliates)
+affiliateRouter.get('/admin/:id/detail', authenticate, requireAdmin, adminGetAffiliateDetail) // chi tiết 1 CTV: người giới thiệu + lịch sử mua hàng
 affiliateRouter.patch('/admin/:id/status', authenticate, requireAdmin, adminApproveAffiliate)
-affiliateRouter.patch('/admin/withdrawal/:id', authenticate, requireAdmin, adminProcessWithdrawal)
+affiliateRouter.get('/admin/tiers', authenticate, requireAdmin, adminGetAllTiers)
+affiliateRouter.post('/admin/tiers', authenticate, requireAdmin, adminCreateAffiliateTier)
+affiliateRouter.patch('/admin/tiers/:id', authenticate, requireAdmin, adminUpdateAffiliateTier)
+affiliateRouter.delete('/admin/tiers/:id', authenticate, requireAdmin, adminDeleteAffiliateTier)
 
 // ── VIP ROUTES ────────────────────────────────────────────────────────────────
 const vipRouter = express.Router()

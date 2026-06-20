@@ -2,6 +2,7 @@ const prisma = require('../config/prisma')
 const logger = require('../config/logger')
 const { emitToAll } = require('../config/socket')
 const { getUserVipDiscounts } = require('./vip.controller')
+const { processReferralPurchase } = require('../services/affiliate.service')
 
 // ── USER ──────────────────────────────────────────────────────────────────────
 
@@ -315,6 +316,9 @@ const openMysteryBox = async (req, res) => {
 
       return { updatedUser, history }
     })
+
+    // Ghi nhận hoa hồng CTV nếu người mua được giới thiệu
+    await processReferralPurchase(userId, price, result.history.id)
 
     if (['LEGENDARY', 'MYTHIC'].includes(selectedAccount.rarity)) {
       emitToAll('mysterybox:winner', {

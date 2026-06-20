@@ -1,6 +1,6 @@
 const { emitToAll, emitToUser } = require('../config/socket')
 const prisma = require('../config/prisma')
-const { getUserVipDiscounts } = require('./vip.controller')
+const { getUserVipDiscounts, recalculateVip } = require('./vip.controller')
 
 const selectReward = (rewards) => {
   const random = Math.random(); let c = 0
@@ -98,7 +98,8 @@ const spin = async (req, res) => {
       let updatedUser = await tx.user.update({
         where: { id: req.user.id },
         data: {
-          balance: { decrement: wheel.spinCost }
+          balance: { decrement: wheel.spinCost },
+          totalSpent: { increment: wheel.spinCost }
         }
       });
 
@@ -236,6 +237,9 @@ const spin = async (req, res) => {
 
       return { history, updatedUser, wheelOwnedAccount };
     });
+
+    // Cập nhật VIP sau khi quay vòng quay
+    recalculateVip(req.user.id).catch(err => console.error('recalculateVip after spin:', err))
 
     emitToUser(req.user.id, 'balance:update', {
       balance: result.updatedUser.balance,

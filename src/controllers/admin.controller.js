@@ -463,7 +463,7 @@ const getAllDeposits = async (req, res) => {
 
 const getBadgeCounts = async (req, res) => {
   try {
-    const [pendingOrders, pendingDeposits, unreadTickets, pendingTopup, pendingCards] = await Promise.all([
+    const [pendingOrders, pendingDeposits, unreadTickets, pendingTopup, pendingCards, pendingAffiliates] = await Promise.all([
       prisma.order.count({ where: { status: 'PENDING' } }),
       prisma.deposit.count({ where: { status: 'PENDING' } }),
       prisma.ticket.count({
@@ -474,6 +474,7 @@ const getBadgeCounts = async (req, res) => {
       }),
       prisma.gameTopupOrder.count({ where: { status: 'PENDING' } }),
       prisma.cardDeposit.count({ where: { status: 'PENDING' } }),
+      prisma.affiliate.count({ where: { status: 'PENDING' } }),
     ])
 
     res.json({
@@ -484,6 +485,7 @@ const getBadgeCounts = async (req, res) => {
         '/admin/tickets':     unreadTickets,
         '/admin/topup':       pendingTopup,
         '/admin/card-config': pendingCards,
+        '/admin/affiliate':   pendingAffiliates,
       }
     })
   } catch (e) {
@@ -491,4 +493,77 @@ const getBadgeCounts = async (req, res) => {
   }
 }
 
-module.exports = { getDashboardStats, getUsers, banUser, unbanUser, adjustBalance, getAllDeposits, getBadgeCounts };
+// Lấy toàn bộ lịch sử hoạt động (giao dịch) của 1 user — phục vụ admin xem chi tiết
+const getUserActivity = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { page = 1, limit = 15, type, fromDate, toDate } = req.query
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true, username: true, email: true, displayName: true, avatar: true,
+        role: true, balance: true, totalDeposit: true, totalSpent: true,
+        isActive: true, isBanned: true, banReason: true, createdAt: true,
+        lastLogin: true, loginCount: true
+      }
+    })
+
+    if (!user) return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng' })
+
+    const where = { userId: id }
+
+    if (type) where.type = type.toUpperCase()
+
+    if (fromDate || toDate) {
+      where.createdAt = {}
+      if (fromDate) where.createdAt.gte = new Date(`${fromDate}T00:00:00.000Z`)
+      if (toDate) where.createdAt.lte = new Date(`${toDate}T23:59:59.999Z`)
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit)
+    const take = parseInt(limit)
+
+    const [transactions, total, typeCounts] = await Promise.all([
+      prisma.transaction.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          gameAccount: { select: { code: true, title: true } },
+          deposit: { select: { bankCode: true, status: true, transferContent: true } }
+        }
+      }),
+      prisma.transaction.count({ where }),
+      prisma.transaction.groupBy({
+        by: ['type'],
+        where: { userId: id },
+        _count: { _all: true }
+      })
+    ])
+
+    res.json({
+      success: true,
+      data: {
+        user,
+        transactions,
+        typeCounts: typeCounts.reduce((acc, t) => {
+          acc[t.type] = t._count._all
+          return acc
+        }, {})
+      },
+      pagination: {
+        page: parseInt(page),
+        limit: take,
+        total,
+        pages: Math.ceil(total / take)
+      }
+    })
+  } catch (error) {
+    console.error('[Admin] getUserActivity error:', error.message)
+    res.status(500).json({ success: false, message: 'Lỗi lấy lịch sử hoạt động' })
+  }
+}
+
+module.exports = { getDashboardStats, getUsers, banUser, unbanUser, adjustBalance, getAllDeposits, getBadgeCounts, getUserActivity };

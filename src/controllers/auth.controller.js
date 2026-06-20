@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const prisma = require('../config/prisma')
 const { sendResetPasswordEmail } = require('../config/email')
+const { createReferralOnRegister } = require('../services/affiliate.service')
 
 const generateTokens = (userId, role) => {
   const accessToken = jwt.sign({ id: userId, role }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '15m' });
@@ -12,7 +13,7 @@ const generateTokens = (userId, role) => {
 
 const register = async (req, res) => {
   try {
-    const { username, email, password, displayName } = req.body;
+    const { username, email, password, displayName, refCode } = req.body;
 
     const exists = await prisma.user.findFirst({ where: { OR: [{ email }, { username }] } });
     if (exists) {
@@ -29,6 +30,11 @@ const register = async (req, res) => {
       },
       select: { id: true, username: true, email: true, displayName: true, avatar: true, role: true, balance: true }
     });
+
+    // Ghi nhận giới thiệu (CTV) nếu đăng ký bằng link giới thiệu — không chặn đăng ký nếu refCode lỗi
+    if (refCode) {
+      await createReferralOnRegister(refCode, user.id);
+    }
 
     const { accessToken, refreshToken } = generateTokens(user.id, user.role);
     await prisma.user.update({ where: { id: user.id }, data: { refreshToken } });

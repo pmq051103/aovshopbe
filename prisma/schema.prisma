@@ -680,6 +680,7 @@ enum TransactionType {
   REFUND
   TOPUP_PURCHASE
   VIP_BONUS
+  AFFILIATE_COMMISSION
 }
 
 enum TransactionStatus {
@@ -714,6 +715,7 @@ enum NotificationType {
   ANNOUNCEMENT
   REFUND
   VIP
+  AFFILIATE_COMMISSION
 }
 
 enum OrderStatus {
@@ -1069,21 +1071,14 @@ model Affiliate {
   userId          String            @unique
   code            String            @unique @db.VarChar(20)   // mã giới thiệu, VD: CTV_ABC123
   status          AffiliateStatus   @default(PENDING)         // chờ duyệt → active → suspended
-  commissionRate  Decimal           @default(5.00) @db.Decimal(5, 2) // % hoa hồng
-  totalReferrals  Int               @default(0)
-  totalEarned     Decimal           @default(0.00) @db.Decimal(15, 2)
-  totalPaid       Decimal           @default(0.00) @db.Decimal(15, 2)
-  pendingBalance  Decimal           @default(0.00) @db.Decimal(15, 2)
-  bankName        String?           @db.VarChar(100)
-  bankAccount     String?           @db.VarChar(50)
-  bankOwner       String?           @db.VarChar(100)
-  note            String?           @db.Text
+  totalReferrals  Int               @default(0)               // tổng số người đăng ký qua link (mọi trạng thái)
+  completedReferrals Int            @default(0)               // số người đã hoàn thành bước 3 (mua hàng lần đầu) — dùng để tính bậc
+  totalEarned     Decimal           @default(0.00) @db.Decimal(15, 2) // tổng hoa hồng đã nhận (đã cộng vào balance)
   approvedAt      DateTime?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   user            User              @relation(fields: [userId], references: [id])
   referrals       AffiliateReferral[]
-  withdrawals     AffiliateWithdrawal[]
   commissions     AffiliateCommission[]
 
   @@index([code])
@@ -1092,12 +1087,15 @@ model Affiliate {
 }
 
 model AffiliateReferral {
-  id            String    @id @default(uuid())
-  affiliateId   String
-  referredUserId String   @unique   // mỗi user chỉ được giới thiệu 1 lần
-  createdAt     DateTime  @default(now())
-  affiliate     Affiliate @relation(fields: [affiliateId], references: [id])
-  referredUser  User      @relation("ReferredUser", fields: [referredUserId], references: [id])
+  id              String    @id @default(uuid())
+  affiliateId     String
+  referredUserId  String    @unique   // mỗi user chỉ được giới thiệu 1 lần
+  step1At         DateTime  @default(now()) // Bước 1: tạo tài khoản — hoàn thành ngay khi đăng ký bằng link
+  step2At         DateTime?                 // Bước 2: nạp tiền lần đầu
+  step3At         DateTime?                 // Bước 3: mua hàng lần đầu — hoàn thành lượt giới thiệu
+  createdAt       DateTime  @default(now())
+  affiliate       Affiliate @relation(fields: [affiliateId], references: [id])
+  referredUser    User      @relation("ReferredUser", fields: [referredUserId], references: [id])
 
   @@index([affiliateId])
   @@map("affiliate_referrals")
@@ -1106,52 +1104,37 @@ model AffiliateReferral {
 model AffiliateCommission {
   id            String              @id @default(uuid())
   affiliateId   String
-  orderId       String?             // đơn hàng phát sinh hoa hồng
+  orderId       String?             // đơn hàng / referenceId phát sinh hoa hồng
   amount        Decimal             @db.Decimal(15, 2)
   rate          Decimal             @db.Decimal(5, 2)
   orderAmount   Decimal             @db.Decimal(15, 2)
-  status        CommissionStatus    @default(PENDING)
-  paidAt        DateTime?
+  tierName      String?             @db.VarChar(50) // tên bậc CTV tại thời điểm phát sinh hoa hồng
   createdAt     DateTime            @default(now())
   affiliate     Affiliate           @relation(fields: [affiliateId], references: [id])
 
   @@index([affiliateId])
-  @@index([status])
   @@map("affiliate_commissions")
 }
 
-model AffiliateWithdrawal {
-  id            String              @id @default(uuid())
-  affiliateId   String
-  amount        Decimal             @db.Decimal(15, 2)
-  status        WithdrawalStatus    @default(PENDING)
-  note          String?             @db.Text
-  processedAt   DateTime?
-  createdAt     DateTime            @default(now())
-  affiliate     Affiliate           @relation(fields: [affiliateId], references: [id])
+model AffiliateTier {
+  id                String   @id @default(uuid())
+  name              String   @db.VarChar(50)    // Bậc 1, Bậc 2, Bậc 3...
+  minReferrals      Int                          // số lượt giới thiệu hoàn thành (đã mua hàng) tối thiểu
+  commissionPercent Decimal  @default(0.00) @db.Decimal(5, 2) // % hoa hồng mỗi đơn hàng
+  color             String   @default("#ffffff") @db.VarChar(20)
+  icon              String?  @db.VarChar(50)
+  sortOrder         Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  @@index([affiliateId])
-  @@map("affiliate_withdrawals")
+  @@map("affiliate_tiers")
 }
 
 enum AffiliateStatus {
   PENDING
   ACTIVE
   SUSPENDED
-}
-
-enum CommissionStatus {
-  PENDING
-  APPROVED
-  PAID
-  CANCELLED
-}
-
-enum WithdrawalStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  PAID
 }
 
 

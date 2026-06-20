@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma')
 const { notifyLayawayOverdueAdmin, notifyLayawayReminderUser } = require('../config/email')
+const { processReferralPurchase } = require('../services/affiliate.service')
 
 // ── HELPERS ────────────────────────────────────────────────────────────────────
 
@@ -309,6 +310,11 @@ const payLayaway = async (req, res) => {
 
       return updated
     })
+
+    // Ghi nhận hoa hồng CTV nếu đơn trả góp đã hoàn tất (trả hết) và người mua được giới thiệu
+    if (isFullyPaid) {
+      await processReferralPurchase(userId, layaway.totalPrice, result.id)
+    }
 
     res.json({
       success: true,
