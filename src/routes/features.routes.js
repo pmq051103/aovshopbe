@@ -4,18 +4,24 @@ const { protect: authenticate, adminOnly: requireAdmin } = require('../middlewar
 // ── AFFILIATE ROUTES ──────────────────────────────────────────────────────────
 const affiliateRouter = express.Router()
 const {
-  applyAffiliate, getMyAffiliate, validateAffiliateCode,
+  applyAffiliate, updatePayoutInfo, getMyAffiliate, validateAffiliateCode,
   adminGetAffiliates, adminApproveAffiliate, adminGetAffiliateDetail,
   getAffiliateTiers, adminGetAllTiers,
   adminCreateTier: adminCreateAffiliateTier,
   adminUpdateTier: adminUpdateAffiliateTier,
-  adminDeleteTier: adminDeleteAffiliateTier
+  adminDeleteTier: adminDeleteAffiliateTier,
+  createWithdrawal, exchangeBalance, getMinWithdraw,
+  adminGetWithdrawals, adminProcessWithdrawal, adminSetMinWithdraw
 } = require('../controllers/affiliate.controller')
 
 affiliateRouter.get('/validate/:code', validateAffiliateCode)                          // public
 affiliateRouter.get('/tiers', getAffiliateTiers)                                       // public — bảng bậc hoa hồng
+affiliateRouter.get('/min-withdraw', getMinWithdraw)                                    // public — số tiền rút tối thiểu hiện tại
 affiliateRouter.post('/apply', authenticate, applyAffiliate)                           // user đăng ký CTV
 affiliateRouter.get('/me', authenticate, getMyAffiliate)                               // thông tin CTV của tôi
+affiliateRouter.patch('/payout-info', authenticate, updatePayoutInfo)                  // cập nhật tài khoản nhận tiền
+affiliateRouter.post('/withdrawals', authenticate, createWithdrawal)                   // gửi yêu cầu rút tiền
+affiliateRouter.post('/exchange', authenticate, exchangeBalance)                       // quy đổi số dư CTV sang số dư shop
 
 affiliateRouter.get('/admin/list', authenticate, requireAdmin, adminGetAffiliates)
 affiliateRouter.get('/admin/:id/detail', authenticate, requireAdmin, adminGetAffiliateDetail) // chi tiết 1 CTV: người giới thiệu + lịch sử mua hàng
@@ -24,6 +30,10 @@ affiliateRouter.get('/admin/tiers', authenticate, requireAdmin, adminGetAllTiers
 affiliateRouter.post('/admin/tiers', authenticate, requireAdmin, adminCreateAffiliateTier)
 affiliateRouter.patch('/admin/tiers/:id', authenticate, requireAdmin, adminUpdateAffiliateTier)
 affiliateRouter.delete('/admin/tiers/:id', authenticate, requireAdmin, adminDeleteAffiliateTier)
+
+affiliateRouter.get('/admin/withdrawals', authenticate, requireAdmin, adminGetWithdrawals)        // danh sách yêu cầu rút tiền
+affiliateRouter.patch('/admin/withdrawals/:id', authenticate, requireAdmin, adminProcessWithdrawal) // duyệt / từ chối
+affiliateRouter.patch('/admin/min-withdraw', authenticate, requireAdmin, adminSetMinWithdraw)      // cấu hình số tiền rút tối thiểu
 
 // ── VIP ROUTES ────────────────────────────────────────────────────────────────
 const vipRouter = express.Router()

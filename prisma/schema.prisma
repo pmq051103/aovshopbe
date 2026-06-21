@@ -681,6 +681,7 @@ enum TransactionType {
   TOPUP_PURCHASE
   VIP_BONUS
   AFFILIATE_COMMISSION
+  AFFILIATE_EXCHANGE
 }
 
 enum TransactionStatus {
@@ -1073,13 +1074,18 @@ model Affiliate {
   status          AffiliateStatus   @default(PENDING)         // chờ duyệt → active → suspended
   totalReferrals  Int               @default(0)               // tổng số người đăng ký qua link (mọi trạng thái)
   completedReferrals Int            @default(0)               // số người đã hoàn thành bước 3 (mua hàng lần đầu) — dùng để tính bậc
-  totalEarned     Decimal           @default(0.00) @db.Decimal(15, 2) // tổng hoa hồng đã nhận (đã cộng vào balance)
+  totalEarned     Decimal           @default(0.00) @db.Decimal(15, 2) // tổng hoa hồng đã nhận từ trước đến giờ (cộng dồn, không giảm khi rút/quy đổi)
+  availableBalance Decimal          @default(0.00) @db.Decimal(15, 2) // số dư affiliate hiện có thể rút hoặc quy đổi sang số dư shop
+  bankName            String?       @db.VarChar(100)          // tên ngân hàng / ví điện tử (Momo, ZaloPay...) nhận tiền rút
+  bankAccountNumber   String?       @db.VarChar(50)           // số tài khoản / số điện thoại ví
+  bankAccountHolder   String?       @db.VarChar(100)          // tên chủ tài khoản / chủ ví
   approvedAt      DateTime?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   user            User              @relation(fields: [userId], references: [id])
   referrals       AffiliateReferral[]
   commissions     AffiliateCommission[]
+  withdrawals     AffiliateWithdrawal[]
 
   @@index([code])
   @@index([status])
@@ -1116,6 +1122,25 @@ model AffiliateCommission {
   @@map("affiliate_commissions")
 }
 
+model AffiliateWithdrawal {
+  id                String                     @id @default(uuid())
+  affiliateId       String
+  amount            Decimal                    @db.Decimal(15, 2)
+  bankName          String                     @db.VarChar(100)   // snapshot thông tin nhận tiền tại thời điểm yêu cầu
+  bankAccountNumber String                     @db.VarChar(50)
+  bankAccountHolder String                     @db.VarChar(100)
+  status            AffiliateWithdrawalStatus  @default(PENDING)
+  rejectReason      String?                    @db.Text           // lý do admin từ chối (hiển thị cho CTV)
+  processedAt       DateTime?
+  processedBy       String?                                       // userId admin xử lý
+  createdAt         DateTime                   @default(now())
+  affiliate         Affiliate                  @relation(fields: [affiliateId], references: [id])
+
+  @@index([affiliateId])
+  @@index([status])
+  @@map("affiliate_withdrawals")
+}
+
 model AffiliateTier {
   id                String   @id @default(uuid())
   name              String   @db.VarChar(50)    // Bậc 1, Bậc 2, Bậc 3...
@@ -1135,6 +1160,12 @@ enum AffiliateStatus {
   PENDING
   ACTIVE
   SUSPENDED
+}
+
+enum AffiliateWithdrawalStatus {
+  PENDING
+  COMPLETED
+  REJECTED
 }
 
 

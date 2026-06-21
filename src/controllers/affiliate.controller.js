@@ -1,11 +1,22 @@
 const prisma = require('../config/prisma')
 const { emitToAdmins } = require('../config/socket')
-const { getAffiliateTierFor } = require('../services/affiliate.service')
+const {
+  getAffiliateTierFor,
+  getAffiliateMinWithdraw,
+  requestWithdrawal,
+  processWithdrawal,
+  exchangeToShopBalance
+} = require('../services/affiliate.service')
 
 // Tạo mã giới thiệu (user gửi yêu cầu làm CTV) — vẫn cần admin duyệt như cũ
+// Bắt buộc nhập thông tin tài khoản nhận tiền (ngân hàng hoặc ví điện tử) để sau này rút tiền
 const applyAffiliate = async (req, res) => {
   try {
     const userId = req.user.id
+    const { bankName, bankAccountNumber, bankAccountHolder } = req.body
+
+    if (!bankName?.trim() || !bankAccountNumber?.trim() || !bankAccountHolder?.trim())
+      return res.status(400).json({ success: false, message: 'Vui lòng nhập đầy đủ thông tin tài khoản nhận tiền (ngân hàng/ví điện tử, số tài khoản, tên chủ tài khoản)' })
 
     const existing = await prisma.affiliate.findUnique({ where: { userId } })
     if (existing) return res.status(400).json({ success: false, message: 'Bạn đã đăng ký CTV rồi' })
@@ -14,13 +25,47 @@ const applyAffiliate = async (req, res) => {
     const code = 'CTV_' + Math.random().toString(36).substring(2, 7).toUpperCase()
 
     const affiliate = await prisma.affiliate.create({
-      data: { userId, code, status: 'PENDING' },
+      data: {
+        userId,
+        code,
+        status: 'PENDING',
+        bankName: bankName.trim(),
+        bankAccountNumber: bankAccountNumber.trim(),
+        bankAccountHolder: bankAccountHolder.trim()
+      },
       include: { user: { select: { username: true, displayName: true, email: true } } }
     })
 
     res.json({ success: true, message: 'Đã gửi yêu cầu đăng ký CTV, chờ admin duyệt', data: affiliate })
 
     emitToAdmins('admin:new_affiliate', { affiliateId: affiliate.id, code: affiliate.code })
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// User: cập nhật thông tin tài khoản nhận tiền (ngân hàng / ví điện tử)
+const updatePayoutInfo = async (req, res) => {
+  try {
+    const userId = req.user.id
+    const { bankName, bankAccountNumber, bankAccountHolder } = req.body
+
+    if (!bankName?.trim() || !bankAccountNumber?.trim() || !bankAccountHolder?.trim())
+      return res.status(400).json({ success: false, message: 'Vui lòng nhập đầy đủ thông tin tài khoản nhận tiền' })
+
+    const affiliate = await prisma.affiliate.findUnique({ where: { userId } })
+    if (!affiliate) return res.status(404).json({ success: false, message: 'Bạn chưa đăng ký CTV' })
+
+    const updated = await prisma.affiliate.update({
+      where: { id: affiliate.id },
+      data: {
+        bankName: bankName.trim(),
+        bankAccountNumber: bankAccountNumber.trim(),
+        bankAccountHolder: bankAccountHolder.trim()
+      }
+    })
+
+    res.json({ success: true, message: 'Đã cập nhật thông tin nhận tiền', data: updated })
   } catch (err) {
     res.status(500).json({ success: false, message: err.message })
   }
@@ -37,7 +82,8 @@ const getMyAffiliate = async (req, res) => {
           orderBy: { createdAt: 'desc' },
           take: 200
         },
-        commissions: { orderBy: { createdAt: 'desc' }, take: 200 }
+        commissions: { orderBy: { createdAt: 'desc' }, take: 200 },
+        withdrawals: { orderBy: { createdAt: 'desc' }, take: 200 }
       }
     })
     if (!affiliate) return res.status(404).json({ success: false, message: 'Bạn chưa đăng ký CTV' })
@@ -60,13 +106,16 @@ const getMyAffiliate = async (req, res) => {
         : 100
     }
 
+    const minWithdraw = await getAffiliateMinWithdraw()
+
     res.json({
       success: true,
       data: {
         ...affiliate,
         currentTier,
         nextTier,
-        progressToNext
+        progressToNext,
+        minWithdraw
       }
     })
   } catch (err) {
@@ -354,8 +403,110 @@ const adminDeleteTier = async (req, res) => {
   }
 }
 
+// ── USER: Rút tiền & quy đổi số dư CTV ────────────────────────────────────────
+
+// User gửi yêu cầu rút tiền từ số dư CTV (availableBalance) — trừ ngay (giữ chỗ)
+const createWithdrawal = async (req, res) => {
+  try {
+    const { amount } = req.body
+    const withdrawal = await requestWithdrawal(req.user.id, amount)
+    res.json({ success: true, message: 'Đã gửi yêu cầu rút tiền, chờ admin xử lý', data: withdrawal })
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message })
+  }
+}
+
+// User quy đổi số dư CTV sang số dư shop (balance) — số tiền do người dùng nhập
+const exchangeBalance = async (req, res) => {
+  try {
+    const { amount } = req.body
+    const result = await exchangeToShopBalance(req.user.id, amount)
+    res.json({ success: true, message: 'Đã quy đổi số dư CTV sang số dư shop', data: result })
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message })
+  }
+}
+
+// Lấy số tiền rút tối thiểu hiện tại — public, hiển thị cho user trước khi rút
+const getMinWithdraw = async (req, res) => {
+  try {
+    const minWithdraw = await getAffiliateMinWithdraw()
+    res.json({ success: true, data: { minWithdraw } })
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// ── ADMIN: Quản lý yêu cầu rút tiền CTV ──────────────────────────────────────
+
+const adminGetWithdrawals = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status } = req.query
+    const where = status && status !== 'ALL' ? { status } : {}
+    const [total, withdrawals] = await Promise.all([
+      prisma.affiliateWithdrawal.count({ where }),
+      prisma.affiliateWithdrawal.findMany({
+        where,
+        include: {
+          affiliate: {
+            select: {
+              code: true,
+              user: { select: { username: true, displayName: true, email: true } }
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: parseInt(limit)
+      })
+    ])
+    res.json({ success: true, data: { withdrawals, total, page: parseInt(page), totalPages: Math.ceil(total / limit) } })
+  } catch (err) {
+    console.error('❌ adminGetWithdrawals error:', err)
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// action: 'COMPLETE' (đã chuyển khoản) | 'REJECT' (từ chối, hoàn tiền — cần rejectReason)
+const adminProcessWithdrawal = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { action, rejectReason } = req.body
+    const withdrawal = await processWithdrawal(id, action, req.user.id, rejectReason)
+    res.json({
+      success: true,
+      message: action === 'COMPLETE' ? 'Đã xác nhận hoàn thành yêu cầu rút tiền' : 'Đã từ chối yêu cầu và hoàn tiền cho CTV',
+      data: withdrawal
+    })
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message })
+  }
+}
+
+// Admin cấu hình số tiền rút tối thiểu (lưu vào SiteConfig)
+const adminSetMinWithdraw = async (req, res) => {
+  try {
+    const { minWithdraw } = req.body
+    const value = parseFloat(minWithdraw)
+    if (!Number.isFinite(value) || value < 0)
+      return res.status(400).json({ success: false, message: 'Số tiền rút tối thiểu không hợp lệ' })
+
+    await prisma.siteConfig.upsert({
+      where: { key: 'affiliate_min_withdraw' },
+      create: { key: 'affiliate_min_withdraw', value: String(value), type: 'number', group: 'affiliate' },
+      update: { value: String(value) }
+    })
+
+    res.json({ success: true, message: 'Đã cập nhật số tiền rút tối thiểu', data: { minWithdraw: value } })
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
 module.exports = {
-  applyAffiliate, getMyAffiliate, validateAffiliateCode,
+  applyAffiliate, updatePayoutInfo, getMyAffiliate, validateAffiliateCode,
   adminGetAffiliates, adminApproveAffiliate, adminGetAffiliateDetail,
-  getAffiliateTiers, adminGetAllTiers, adminCreateTier, adminUpdateTier, adminDeleteTier
+  getAffiliateTiers, adminGetAllTiers, adminCreateTier, adminUpdateTier, adminDeleteTier,
+  createWithdrawal, exchangeBalance, getMinWithdraw,
+  adminGetWithdrawals, adminProcessWithdrawal, adminSetMinWithdraw
 }
