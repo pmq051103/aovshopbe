@@ -710,8 +710,8 @@ const updateAccount = async (req, res) => {
       data.loginRevealPercent = req.body.loginRevealPercent !== '' ? parseFloat(req.body.loginRevealPercent) : null
     }
     if (req.body.minDepositPercent !== undefined) {
-  data.minDepositPercent = req.body.minDepositPercent !== '' ? parseFloat(req.body.minDepositPercent) : null
-}
+      data.minDepositPercent = req.body.minDepositPercent !== '' ? parseFloat(req.body.minDepositPercent) : null
+    }
 
     if (req.body.status !== undefined) data.status = req.body.status
     if (req.body.isFeatured !== undefined) data.isFeatured = req.body.isFeatured === 'true' || req.body.isFeatured === true
@@ -772,7 +772,9 @@ const updateAccount = async (req, res) => {
           })
         }
 
-        data.skins = finalSkins.length
+        if (req.body.skins !== undefined && req.body.skins !== '') {
+          data.skins = parseInt(req.body.skins)
+        }
       }
 
       if (newImages.length > 0) {
