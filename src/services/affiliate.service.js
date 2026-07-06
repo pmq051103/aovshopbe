@@ -72,6 +72,18 @@ const getAffiliateTierFor = async (completedReferrals, client = prisma) => {
   return tiers.find(t => completedReferrals >= t.minReferrals) || null
 }
 
+// ── Tính bậc CTV "hiệu lực" — ưu tiên bậc admin đã gán tay (manualTierId), ─────
+// nếu không có thì tính tự động theo completedReferrals như cũ.
+// affiliate: object đã có sẵn completedReferrals + manualTierId (không cần include gì thêm)
+const getEffectiveAffiliateTier = async (affiliate, client = prisma) => {
+  if (affiliate.manualTierId) {
+    const manualTier = await client.affiliateTier.findUnique({ where: { id: affiliate.manualTierId } })
+    if (manualTier && manualTier.isActive) return manualTier
+    // Nếu bậc gán tay bị xóa/vô hiệu hóa, rơi về tính tự động
+  }
+  return getAffiliateTierFor(affiliate.completedReferrals, client)
+}
+
 // ── Bước 3 + Hoa hồng: Mua hàng (lần đầu hoặc các lần sau) ─────────────────────
 // QUAN TRỌNG: gọi hàm này SAU KHI transaction đơn hàng đã commit thành công
 // (không gọi trong tx của đơn hàng) — để lỗi ở affiliate không làm rollback đơn hàng gốc.
@@ -112,7 +124,8 @@ const processReferralPurchase = async (buyerUserId, orderAmount, orderId = null)
       }
 
       // Tính bậc theo completedReferrals MỚI NHẤT (đã tính cả lượt vừa hoàn thành nếu có)
-      const tier = await getAffiliateTierFor(completedReferrals, tx)
+      // — ưu tiên bậc admin đã gán tay nếu có
+      const tier = await getEffectiveAffiliateTier({ ...affiliate, completedReferrals }, tx)
       if (!tier || parseFloat(tier.commissionPercent) <= 0) return
 
       const rate = parseFloat(tier.commissionPercent)
@@ -338,6 +351,7 @@ module.exports = {
   markReferralStep2,
   processReferralPurchase,
   getAffiliateTierFor,
+  getEffectiveAffiliateTier,
   getAffiliateMinWithdraw,
   requestWithdrawal,
   processWithdrawal,

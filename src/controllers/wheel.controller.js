@@ -92,7 +92,9 @@ const spin = async (req, res) => {
       });
     }
 
-    const rewardIndex = wheel.rewards.findIndex(r => r.id === selectedReward.id);
+    const rewardIndex = wheel.rewards.findIndex(
+      r => r.id === selectedReward.id
+    );
 
     const result = await prisma.$transaction(async (tx) => {
       let updatedUser = await tx.user.update({
@@ -129,7 +131,7 @@ const spin = async (req, res) => {
             userId: req.user.id,
             amount: quanHuyAmount,
             balanceBefore: user.quanHuyBalance,
-            balanceAfter: user.quanHuyBalance + quanHuyAmount,
+            balanceAfter: parseInt(user.quanHuyBalance || 0) + quanHuyAmount,
             type: 'LUCKY_WHEEL',
             description: `Vòng quay → ${selectedReward.name}`,
             referenceId: selectedReward.id
@@ -139,20 +141,28 @@ const spin = async (req, res) => {
         rewardValue = 0;
       }
 
-      // ── Phần thưởng là acc game ──────────────────────────────────────────
-      let wheelOwnedAccount = null
+      let wheelOwnedAccount = null;
+
       if (selectedReward.type === 'ACCOUNT' && selectedReward.rewardAccountId) {
         const rewardAcc = await tx.gameAccount.findUnique({
           where: { id: selectedReward.rewardAccountId },
-          include: { images: { orderBy: { sortOrder: 'asc' } } }
-        })
+          include: {
+            images: {
+              orderBy: { sortOrder: 'asc' }
+            }
+          }
+        });
+
         if (rewardAcc && rewardAcc.status === 'AVAILABLE') {
-          // Đánh dấu acc đã bán
           await tx.gameAccount.update({
             where: { id: rewardAcc.id },
-            data: { status: 'SOLD', soldAt: new Date(), soldToId: req.user.id }
-          })
-          // Lưu vào kho
+            data: {
+              status: 'SOLD',
+              soldAt: new Date(),
+              soldToId: req.user.id
+            }
+          });
+
           wheelOwnedAccount = await tx.userOwnedAccount.create({
             data: {
               userId: req.user.id,
@@ -172,7 +182,10 @@ const spin = async (req, res) => {
                 gems: rewardAcc.gems,
                 price: rewardAcc.price,
                 thumbnailUrl: rewardAcc.thumbnailUrl,
-                images: rewardAcc.images?.map(i => ({ url: i.url, sortOrder: i.sortOrder })) || [],
+                images: rewardAcc.images?.map(i => ({
+                  url: i.url,
+                  sortOrder: i.sortOrder
+                })) || [],
                 gameUsername: rewardAcc.gameUsername,
                 gamePassword: rewardAcc.gamePassword,
                 gameBindEmail: rewardAcc.gameBindEmail,
@@ -181,12 +194,13 @@ const spin = async (req, res) => {
                 tags: rewardAcc.tags,
                 isVerified: rewardAcc.isVerified,
                 rewardName: selectedReward.name,
-                rarity: selectedReward.rarity,
+                rarity: selectedReward.rarity
               })
             }
-          })
+          });
         }
-        rewardValue = 0
+
+        rewardValue = 0;
       }
 
       await tx.luckyWheelReward.update({
@@ -220,26 +234,33 @@ const spin = async (req, res) => {
         }
       });
 
-      await tx.notification.create({
-        data: {
-          userId: req.user.id,
-          type: 'SPIN',
-          title: '🎰 Kết quả quay!',
-          message: `Nhận: ${selectedReward.name} (${selectedReward.rarity})`,
-          data: {
-            rewardId: selectedReward.id,
-            rewardName: selectedReward.name,
-            rewardType: selectedReward.type,
-            rarity: selectedReward.rarity
-          }
-        }
-      });
-
-      return { history, updatedUser, wheelOwnedAccount };
+      return {
+        history,
+        updatedUser,
+        wheelOwnedAccount
+      };
+    }, {
+      timeout: 15000
     });
 
-    // Cập nhật VIP sau khi quay vòng quay
-    recalculateVip(req.user.id).catch(err => console.error('recalculateVip after spin:', err))
+    prisma.notification.create({
+      data: {
+        userId: req.user.id,
+        type: 'SPIN',
+        title: '🎰 Kết quả quay!',
+        message: `Nhận: ${selectedReward.name} (${selectedReward.rarity})`,
+        data: {
+          rewardId: selectedReward.id,
+          rewardName: selectedReward.name,
+          rewardType: selectedReward.type,
+          rarity: selectedReward.rarity
+        }
+      }
+    }).catch(err => console.error('spin notification:', err));
+
+    recalculateVip(req.user.id).catch(err =>
+      console.error('recalculateVip after spin:', err)
+    );
 
     emitToUser(req.user.id, 'balance:update', {
       balance: result.updatedUser.balance,
@@ -261,7 +282,7 @@ const spin = async (req, res) => {
         history: result.history,
         newBalance: result.updatedUser.balance,
         newQuanHuyBalance: result.updatedUser.quanHuyBalance,
-        ownedAccountId: result.wheelOwnedAccount?.id || null,
+        ownedAccountId: result.wheelOwnedAccount?.id || null
       }
     });
   } catch (e) {

@@ -52,6 +52,7 @@ model User {
   chatSessions        ChatSession[]
   affiliate         Affiliate?
   vipMembership     VipMembership?
+  vipBonusClaims    VipBonusClaim[]
   wishlists         Wishlist[]
   layaways          Layaway[]
   installmentReqs   InstallmentRequest[]
@@ -1079,16 +1080,20 @@ model Affiliate {
   bankName            String?       @db.VarChar(100)          // tên ngân hàng / ví điện tử (Momo, ZaloPay...) nhận tiền rút
   bankAccountNumber   String?       @db.VarChar(50)           // số tài khoản / số điện thoại ví
   bankAccountHolder   String?       @db.VarChar(100)          // tên chủ tài khoản / chủ ví
+  manualTierId    String?                                     // admin gán cứng bậc CTV (ghi đè bậc tính theo completedReferrals)
+  manualTierSetBy String?                                     // userId admin đã gán bậc tay
   approvedAt      DateTime?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   user            User              @relation(fields: [userId], references: [id])
+  manualTier      AffiliateTier?    @relation(fields: [manualTierId], references: [id])
   referrals       AffiliateReferral[]
   commissions     AffiliateCommission[]
   withdrawals     AffiliateWithdrawal[]
 
   @@index([code])
   @@index([status])
+  @@index([manualTierId])
   @@map("affiliates")
 }
 
@@ -1152,6 +1157,7 @@ model AffiliateTier {
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  manualAffiliates  Affiliate[] // các CTV được admin gán cứng vào bậc này
 
   @@map("affiliate_tiers")
 }
@@ -1186,6 +1192,7 @@ model VipTier {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   memberships     VipMembership[]
+  bonusClaims     VipBonusClaim[]
 
   @@map("vip_tiers")
 }
@@ -1197,6 +1204,8 @@ model VipMembership {
   totalSpentSnap  Decimal   @db.Decimal(15, 2) // snapshot tổng chi tiêu khi tính tier
   achievedAt      DateTime  @default(now())
   expiresAt       DateTime? // null = không hết hạn (dựa theo tổng chi tiêu luỹ kế)
+  isManual        Boolean   @default(false) // true = admin điều chỉnh tay, không bị auto recalc theo totalSpent ghi đè
+  setBy           String?   // userId admin đã điều chỉnh tay (nếu isManual = true)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   user            User      @relation(fields: [userId], references: [id])
@@ -1205,6 +1214,22 @@ model VipMembership {
   @@index([userId])
   @@map("vip_memberships")
 }
+
+// Theo dõi các hạng VIP mà 1 user ĐÃ TỪNG được tặng thưởng (bonusQuanHuy/spinBonus).
+// Mỗi cặp (userId, tierId) chỉ được thưởng đúng 1 lần trong suốt vòng đời tài khoản —
+// kể cả khi user bị mất hạng rồi sau đó đạt lại (tự động hoặc admin gán tay).
+model VipBonusClaim {
+  id        String   @id @default(uuid())
+  userId    String
+  tierId    String
+  claimedAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  tier      VipTier  @relation(fields: [tierId], references: [id])
+
+  @@unique([userId, tierId])
+  @@map("vip_bonus_claims")
+}
+
 
 model Wishlist {
   id          String      @id @default(uuid())

@@ -1205,8 +1205,8 @@ const buyCard = async (req, res) => {
     // ── VIP discount cho mua thẻ (cộng dồn với buyDiscount sẵn có của loại thẻ) ──
     const { cardPercent: vipPercent, tier: vipTier } = await getUserVipDiscounts(req.user.id)
     const baseDiscountPercent = parseFloat(config.buyDiscount)
-    const totalDiscountPercent = baseDiscountPercent + vipPercent
-    const unitPrice = Math.round(denom * (1 - totalDiscountPercent / 100))
+    const totalDiscountPercent = Math.min(100, Math.max(0, baseDiscountPercent + vipPercent))
+    const unitPrice = Math.max(0, Math.round(denom * (1 - totalDiscountPercent / 100)))
     const totalPrice = unitPrice * qty
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } })

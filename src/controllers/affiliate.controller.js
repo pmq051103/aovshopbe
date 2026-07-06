@@ -2,6 +2,7 @@ const prisma = require('../config/prisma')
 const { emitToAdmins } = require('../config/socket')
 const {
   getAffiliateTierFor,
+  getEffectiveAffiliateTier,
   getAffiliateMinWithdraw,
   requestWithdrawal,
   processWithdrawal,
@@ -93,7 +94,7 @@ const getMyAffiliate = async (req, res) => {
       orderBy: { minReferrals: 'asc' }
     })
 
-    const currentTier = await getAffiliateTierFor(affiliate.completedReferrals)
+    const currentTier = await getEffectiveAffiliateTier(affiliate)
     // Bậc kế tiếp = bậc đầu tiên (theo minReferrals tăng dần) mà CTV chưa đạt
     const nextTier = tiers.find(t => t.minReferrals > affiliate.completedReferrals) || null
 
@@ -146,17 +147,30 @@ const adminGetAffiliates = async (req, res) => {
   try {
     const { page = 1, limit = 20, status } = req.query
     const where = status ? { status } : {}
-    const [total, affiliates] = await Promise.all([
+    const [total, affiliates, allTiers] = await Promise.all([
       prisma.affiliate.count({ where }),
       prisma.affiliate.findMany({
         where,
-        include: { user: { select: { username: true, displayName: true, email: true } } },
+        include: {
+          user: { select: { username: true, displayName: true, email: true } },
+          manualTier: true
+        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: parseInt(limit)
-      })
+      }),
+      prisma.affiliateTier.findMany({ where: { isActive: true }, orderBy: { minReferrals: 'desc' } })
     ])
-    res.json({ success: true, data: { affiliates, total, page: parseInt(page), totalPages: Math.ceil(total / limit) } })
+
+    // Gắn kèm bậc hiện tại (ưu tiên bậc gán tay) cho mỗi CTV để hiển thị ở danh sách admin
+    const affiliatesWithTier = affiliates.map(a => {
+      const currentTier = a.manualTier && a.manualTier.isActive
+        ? a.manualTier
+        : allTiers.find(t => a.completedReferrals >= t.minReferrals) || null
+      return { ...a, currentTier }
+    })
+
+    res.json({ success: true, data: { affiliates: affiliatesWithTier, total, page: parseInt(page), totalPages: Math.ceil(total / limit) } })
   } catch (err) {
     console.error('❌ adminGetAffiliates error:', err)
     res.status(500).json({ success: false, message: err.message })
@@ -334,6 +348,48 @@ const adminGetAffiliateDetail = async (req, res) => {
   }
 }
 
+// Admin: gán tay bậc CTV cho 1 CTV cụ thể (ghi đè bậc tính theo completedReferrals)
+// body: { tierId } — truyền tierId = null/"" để gỡ ghi đè, trả lại về tính tự động theo lượt giới thiệu
+const adminSetAffiliateTier = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { tierId } = req.body
+
+    const affiliate = await prisma.affiliate.findUnique({ where: { id } })
+    if (!affiliate) return res.status(404).json({ success: false, message: 'Không tìm thấy CTV' })
+
+    if (!tierId) {
+      const updated = await prisma.affiliate.update({
+        where: { id },
+        data: { manualTierId: null, manualTierSetBy: null }
+      })
+      const effectiveTier = await getEffectiveAffiliateTier(updated)
+      return res.json({
+        success: true,
+        message: 'Đã gỡ ghi đè, bậc CTV được tính lại tự động theo lượt giới thiệu',
+        data: { ...updated, currentTier: effectiveTier }
+      })
+    }
+
+    const tier = await prisma.affiliateTier.findUnique({ where: { id: tierId } })
+    if (!tier) return res.status(404).json({ success: false, message: 'Không tìm thấy bậc CTV' })
+
+    const updated = await prisma.affiliate.update({
+      where: { id },
+      data: { manualTierId: tierId, manualTierSetBy: req.user.id }
+    })
+
+    res.json({
+      success: true,
+      message: `Đã gán bậc ${tier.name} cho CTV`,
+      data: { ...updated, currentTier: tier }
+    })
+  } catch (err) {
+    console.error('❌ adminSetAffiliateTier error:', err)
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
 // ── ADMIN: Quản lý bậc hoa hồng (AffiliateTier) ──────────────────────────────
 
 const getAffiliateTiers = async (req, res) => {
@@ -505,7 +561,7 @@ const adminSetMinWithdraw = async (req, res) => {
 
 module.exports = {
   applyAffiliate, updatePayoutInfo, getMyAffiliate, validateAffiliateCode,
-  adminGetAffiliates, adminApproveAffiliate, adminGetAffiliateDetail,
+  adminGetAffiliates, adminApproveAffiliate, adminGetAffiliateDetail, adminSetAffiliateTier,
   getAffiliateTiers, adminGetAllTiers, adminCreateTier, adminUpdateTier, adminDeleteTier,
   createWithdrawal, exchangeBalance, getMinWithdraw,
   adminGetWithdrawals, adminProcessWithdrawal, adminSetMinWithdraw

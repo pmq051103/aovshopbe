@@ -5,7 +5,7 @@ const { protect: authenticate, adminOnly: requireAdmin } = require('../middlewar
 const affiliateRouter = express.Router()
 const {
   applyAffiliate, updatePayoutInfo, getMyAffiliate, validateAffiliateCode,
-  adminGetAffiliates, adminApproveAffiliate, adminGetAffiliateDetail,
+  adminGetAffiliates, adminApproveAffiliate, adminGetAffiliateDetail, adminSetAffiliateTier,
   getAffiliateTiers, adminGetAllTiers,
   adminCreateTier: adminCreateAffiliateTier,
   adminUpdateTier: adminUpdateAffiliateTier,
@@ -26,6 +26,7 @@ affiliateRouter.post('/exchange', authenticate, exchangeBalance)                
 affiliateRouter.get('/admin/list', authenticate, requireAdmin, adminGetAffiliates)
 affiliateRouter.get('/admin/:id/detail', authenticate, requireAdmin, adminGetAffiliateDetail) // chi tiết 1 CTV: người giới thiệu + lịch sử mua hàng
 affiliateRouter.patch('/admin/:id/status', authenticate, requireAdmin, adminApproveAffiliate)
+affiliateRouter.patch('/admin/:id/tier', authenticate, requireAdmin, adminSetAffiliateTier)   // gán/gỡ bậc CTV thủ công
 affiliateRouter.get('/admin/tiers', authenticate, requireAdmin, adminGetAllTiers)
 affiliateRouter.post('/admin/tiers', authenticate, requireAdmin, adminCreateAffiliateTier)
 affiliateRouter.patch('/admin/tiers/:id', authenticate, requireAdmin, adminUpdateAffiliateTier)
@@ -37,7 +38,7 @@ affiliateRouter.patch('/admin/min-withdraw', authenticate, requireAdmin, adminSe
 
 // ── VIP ROUTES ────────────────────────────────────────────────────────────────
 const vipRouter = express.Router()
-const { getVipTiers, getMyVip, adminCreateTier, adminUpdateTier, adminDeleteTier, adminGetMembers } =
+const { getVipTiers, getMyVip, adminCreateTier, adminUpdateTier, adminDeleteTier, adminGetMembers, adminSetUserTier } =
   require('../controllers/vip.controller')
 
 vipRouter.get('/tiers', getVipTiers)                                                   // public
@@ -47,6 +48,7 @@ vipRouter.post('/admin/tiers', authenticate, requireAdmin, adminCreateTier)
 vipRouter.patch('/admin/tiers/:id', authenticate, requireAdmin, adminUpdateTier)
 vipRouter.delete('/admin/tiers/:id', authenticate, requireAdmin, adminDeleteTier)
 vipRouter.get('/admin/members', authenticate, requireAdmin, adminGetMembers)
+vipRouter.patch('/admin/members/:userId/tier', authenticate, requireAdmin, adminSetUserTier)   // gán/gỡ hạng VIP thủ công
 
 // ── WISHLIST ROUTES ───────────────────────────────────────────────────────────
 const wishlistRouter = express.Router()
