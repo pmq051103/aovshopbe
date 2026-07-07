@@ -269,7 +269,9 @@ const spin = async (req, res) => {
 
     emitToAll('wheel:winner', {
       userId: req.user.id,
-      rewardName: selectedReward.name,
+      username: req.user.displayName || req.user.username,
+      avatar: req.user.avatar,
+      reward: selectedReward.name,
       rarity: selectedReward.rarity
     });
 
