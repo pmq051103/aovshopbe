@@ -1,4 +1,5 @@
 const prisma = require('../config/prisma')
+const { sanitizeRichText } = require('../utils/sanitizeRichText')
 
 let settingsCache = null
 let cacheTime = 0
@@ -127,12 +128,14 @@ const upsertMany = async (req, res) => {
         where: { key: s.key },
         create: {
           key: s.key,
-          value: String(s.value ?? ''),
+          // Setting kiểu 'richtext' (VD: thông báo bảo trì soạn bằng ReactQuill) được hiển thị
+          // trực tiếp qua dangerouslySetInnerHTML cho khách xem — phải sanitize để chặn XSS
+          value: s.type === 'richtext' ? sanitizeRichText(String(s.value ?? '')) : String(s.value ?? ''),
           type: s.type || 'string',
           group: s.group || 'general'
         },
         update: {
-          value: String(s.value ?? ''),
+          value: s.type === 'richtext' ? sanitizeRichText(String(s.value ?? '')) : String(s.value ?? ''),
           type: s.type || 'string',
           group: s.group || 'general'
         }
@@ -161,12 +164,12 @@ const upsertOne = async (req, res) => {
       where: { key },
       create: {
         key,
-        value: String(value),
+        value: type === 'richtext' ? sanitizeRichText(String(value)) : String(value),
         group,
         type,
       },
       update: {
-        value: String(value),
+        value: type === 'richtext' ? sanitizeRichText(String(value)) : String(value),
       },
     })
 

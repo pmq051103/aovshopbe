@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { protect, adminOnly } = require('../middleware/authMiddleware')
 const { uploadBanner, deleteImage } = require('../config/cloudinary')
+const { sanitizeRichText } = require('../utils/sanitizeRichText')
 
 const prisma = require('../config/prisma')
 
@@ -99,7 +100,7 @@ router.post('/', protect, adminOnly, uploadBanner.single('thumbnail'), async (re
         title,
         slug,
         summary: summary || '',
-        content,
+        content: sanitizeRichText(content),
         tags: tags || '',
         thumbnailUrl: req.file?.path || req.body.thumbnailUrl || null,
         thumbnailId: req.file?.filename || null,
@@ -128,7 +129,7 @@ router.put('/:id', protect, adminOnly, uploadBanner.single('thumbnail'), async (
       data: {
         ...(title && { title }),
         ...(summary !== undefined && { summary }),
-        ...(content && { content }),
+        ...(content && { content: sanitizeRichText(content) }),
         ...(tags !== undefined && { tags }),
         ...(req.file && { thumbnailUrl: req.file.path, thumbnailId: req.file.filename }),
         ...(!req.file && req.body.thumbnailUrl !== undefined && { thumbnailUrl: req.body.thumbnailUrl }),

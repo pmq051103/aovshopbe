@@ -1,4 +1,5 @@
 const prisma = require('../config/prisma')
+const { sanitizeRichText } = require('../utils/sanitizeRichText')
 
 /* ─── PUBLIC ──────────────────────────────────────────────── */
 
@@ -54,7 +55,7 @@ const adminCreate = async (req, res) => {
     const item = await prisma.announcement.create({
       data: {
         title,
-        content,
+        content: sanitizeRichText(content),
         isActive: Boolean(isActive),
         sortOrder: parseInt(sortOrder) || 0,
         startAt: startAt ? new Date(startAt) : null,
@@ -73,7 +74,7 @@ const adminUpdate = async (req, res) => {
     const { title, content, isActive, sortOrder, startAt, endAt } = req.body
     const data = {}
     if (title !== undefined)     data.title     = title
-    if (content !== undefined)   data.content   = content
+    if (content !== undefined)   data.content   = sanitizeRichText(content)
     if (isActive !== undefined)  data.isActive  = isActive === true || isActive === 'true'
     if (sortOrder !== undefined) data.sortOrder = parseInt(sortOrder) || 0
     if (startAt !== undefined)   data.startAt   = startAt ? new Date(startAt) : null
