@@ -37,6 +37,8 @@ const RICH_TEXT_SANITIZE_OPTIONS = {
       'font-weight': [/^.*$/],
       'font-style': [/^.*$/],
       'text-decoration': [/^.*$/],
+      'font-size': [/^[\d.]+(px|pt|em|rem|%)$/],
+      'font-family': [/^[\w\s,'"-]+$/],
       width: [/^[\d.]+(%|px|pt)$/],
       'text-indent': [/^.*$/],
     },
