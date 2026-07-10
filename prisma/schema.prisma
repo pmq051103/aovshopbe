@@ -58,6 +58,13 @@ model User {
   installmentReqs   InstallmentRequest[]
   referredBy        AffiliateReferral?   @relation("ReferredUser")
 
+  // ── Badges / Achievements / Auction / Marketplace (NEW) ──────────────────
+  badges              UserBadge[]
+  achievements        UserAchievement[]
+  auctionBids         AuctionBid[]
+  auctionRoomsWon     AuctionRoom[]        @relation("AuctionWinner")
+  marketplaceListings MarketplaceListing[] @relation("MarketplaceSeller")
+  marketplacePurchases MarketplaceListing[] @relation("MarketplaceBuyer")
 
   @@map("users")
 }
@@ -106,6 +113,7 @@ model GameAccount {
   wishlists         Wishlist[]
   layaway           Layaway?
   installmentReqs   InstallmentRequest[]
+  auctionRoom       AuctionRoom?
 
   @@index([status])
   @@index([rank])
@@ -514,6 +522,7 @@ model UserOwnedAccount {
   receivedAt   DateTime           @default(now())
   snapshotData String             @db.LongText
   user         User               @relation(fields: [userId], references: [id])
+  marketplaceListing MarketplaceListing?
 
   @@index([userId])
   @@index([sourceType])
@@ -683,6 +692,12 @@ enum TransactionType {
   VIP_BONUS
   AFFILIATE_COMMISSION
   AFFILIATE_EXCHANGE
+  AUCTION_HOLD
+  AUCTION_REFUND
+  AUCTION_WIN
+  MARKETPLACE_SALE
+  MARKETPLACE_PURCHASE
+  MARKETPLACE_FEE
 }
 
 enum TransactionStatus {
@@ -718,6 +733,8 @@ enum NotificationType {
   REFUND
   VIP
   AFFILIATE_COMMISSION
+  AUCTION
+  MARKETPLACE
 }
 
 enum OrderStatus {
@@ -767,6 +784,8 @@ enum OwnedAccountSource {
   MYSTERY_BOX
   LUCKY_WHEEL
   GIFTED
+  AUCTION_WIN
+  MARKETPLACE_PURCHASE
 }
 
 enum TopupOrderStatus {
@@ -1318,4 +1337,184 @@ enum InstallmentRequestStatus {
   CONTACTED
   APPROVED
   REJECTED
+}
+
+// ══════════════════════════════════════════════
+// BADGES & ACHIEVEMENTS (Hồ sơ người dùng)
+// ══════════════════════════════════════════════
+
+// Danh mục huy hiệu do admin tạo (thuần cosmetic, gắn vào UserBadge)
+model Badge {
+  id          String      @id @default(uuid())
+  name        String      @db.VarChar(100)
+  description String?     @db.Text
+  icon        String?     @db.VarChar(50)   // icon key (FontAwesome), giống VipTier.icon
+  imageUrl    String?     @db.Text          // ảnh huy hiệu tuỳ chỉnh (nếu admin upload)
+  imagePublicId String?   @db.VarChar(255)
+  color       String      @default("#ffffff") @db.VarChar(20)
+  isActive    Boolean     @default(true)
+  sortOrder   Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  users       UserBadge[]
+  achievements Achievement[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  id        String   @id @default(uuid())
+  userId    String
+  badgeId   String
+  awardedAt DateTime @default(now())
+  note      String?  @db.VarChar(255) // vd: "Thưởng từ thành tựu X" hoặc admin tự tay tặng
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+  @@map("user_badges")
+}
+
+// Thành tựu — đạt mốc (ngưỡng) 1 chỉ số nào đó của user thì tự động được cấp,
+// có thể kèm badge thưởng + quân huy thưởng.
+model Achievement {
+  id             String            @id @default(uuid())
+  name           String            @db.VarChar(150)
+  description    String?           @db.Text
+  icon           String?           @db.VarChar(50)
+  metric         AchievementMetric // chỉ số theo dõi
+  threshold      Decimal           @db.Decimal(15, 2) // mốc cần đạt
+  rewardQuanHuy  Int               @default(0)
+  rewardBadgeId  String?
+  isActive       Boolean           @default(true)
+  sortOrder      Int               @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  rewardBadge    Badge?            @relation(fields: [rewardBadgeId], references: [id])
+  users          UserAchievement[]
+
+  @@index([metric])
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String      @id @default(uuid())
+  userId        String
+  achievementId String
+  achievedAt    DateTime    @default(now())
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+  @@map("user_achievements")
+}
+
+enum AchievementMetric {
+  TOTAL_DEPOSIT      // tổng nạp (VNĐ)
+  TOTAL_SPENT         // tổng chi tiêu (VNĐ)
+  ACCOUNTS_OWNED      // số acc đã sở hữu (mua + túi mù + quay + đấu giá + marketplace)
+  WHEEL_SPINS         // số lượt quay vòng quay đã thực hiện
+  MYSTERY_BOX_OPENED  // số túi mù đã mở
+  AUCTION_WINS        // số phiên đấu giá đã thắng
+  MARKETPLACE_SALES   // số acc đã bán thành công trên chợ trao đổi
+}
+
+// ══════════════════════════════════════════════
+// ĐẤU GIÁ (Auction)
+// ══════════════════════════════════════════════
+
+model AuctionRoom {
+  id              String            @id @default(uuid())
+  title           String            @db.VarChar(255)
+  description     String?           @db.Text
+  thumbnailUrl    String?           @db.Text
+  thumbnailPublicId String?         @db.VarChar(255)
+  status          AuctionRoomStatus @default(SCHEDULED)
+  scheduledAt     DateTime          // thời điểm dự kiến bắt đầu (hiện trên thanh chạy trước)
+  startedAt       DateTime?         // thời điểm admin thực sự bấm "Bắt đầu" (up acc xong)
+  endsAt          DateTime?         // hạn chót — set khi bắt đầu, KHÔNG tự gia hạn khi có bid sát giờ
+  gameAccountId   String?           @unique // acc đem ra đấu giá, admin gắn khi chuẩn bị bắt đầu
+  startingPrice   Decimal           @db.Decimal(15, 2)
+  bidStep         Decimal           @db.Decimal(15, 2) @default(10000)
+  currentPrice    Decimal?          @db.Decimal(15, 2) // giá cao nhất hiện tại (null = chưa ai bid, = startingPrice)
+  currentBidderId String?
+  winnerId        String?
+  winningBidId    String?           @unique
+  totalBids       Int               @default(0)
+  cancelReason    String?           @db.Text
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  gameAccount     GameAccount?      @relation(fields: [gameAccountId], references: [id])
+  winner          User?             @relation("AuctionWinner", fields: [winnerId], references: [id])
+  bids            AuctionBid[]
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("auction_rooms")
+}
+
+model AuctionBid {
+  id          String      @id @default(uuid())
+  roomId      String
+  userId      String
+  amount      Decimal     @db.Decimal(15, 2)
+  isRefunded  Boolean     @default(false) // true = đã hoàn tiền (bị vượt giá hoặc phiên huỷ)
+  isWinning   Boolean     @default(false) // true = đây là bid thắng cuộc (chỉ 1 bid/room được true)
+  createdAt   DateTime    @default(now())
+  room        AuctionRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id])
+
+  @@index([roomId])
+  @@index([userId])
+  @@map("auction_bids")
+}
+
+enum AuctionRoomStatus {
+  SCHEDULED   // admin đã tạo phòng, hiện trên thanh chạy, CHƯA cho bid (chưa gắn acc)
+  ACTIVE      // admin đã up acc + bấm bắt đầu, đang nhận bid
+  ENDED       // đã hết giờ, đã chốt người thắng (hoặc không ai bid)
+  CANCELLED   // admin huỷ phòng (hoàn tiền bid hiện tại nếu có)
+}
+
+// ══════════════════════════════════════════════
+// CHỢ TRAO ĐỔI (Marketplace P2P)
+// ══════════════════════════════════════════════
+
+model MarketplaceListing {
+  id             String                    @id @default(uuid())
+  sellerId       String
+  ownedAccountId String                    @unique // acc user đang sở hữu (UserOwnedAccount) đem bán
+  title          String                    @db.VarChar(255)
+  description    String?                   @db.Text
+  price          Decimal                   @db.Decimal(15, 2)
+  feePercent     Decimal                   @db.Decimal(5, 2) // % phí sàn tại thời điểm đăng (snapshot, admin cấu hình 5% hoặc 10%)
+  status         MarketplaceListingStatus  @default(PENDING)
+  rejectReason   String?                   @db.Text
+  approvedAt     DateTime?
+  approvedBy     String?                   // userId admin duyệt
+  soldAt         DateTime?
+  buyerId        String?
+  cancelledAt    DateTime?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  seller         User                      @relation("MarketplaceSeller", fields: [sellerId], references: [id])
+  buyer          User?                     @relation("MarketplaceBuyer", fields: [buyerId], references: [id])
+  ownedAccount   UserOwnedAccount          @relation(fields: [ownedAccountId], references: [id])
+
+  @@index([sellerId])
+  @@index([buyerId])
+  @@index([status])
+  @@map("marketplace_listings")
+}
+
+enum MarketplaceListingStatus {
+  PENDING     // chờ admin duyệt
+  APPROVED    // đã duyệt, đang bán công khai
+  REJECTED    // admin từ chối
+  SOLD        // đã bán
+  CANCELLED   // người bán tự huỷ (khi còn PENDING/APPROVED)
 }

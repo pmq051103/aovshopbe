@@ -53,6 +53,14 @@ io.on('connection', (socket) => {
     })
   })
 
+  // User vào/rời phòng đấu giá để nhận realtime bid
+  socket.on('auction:join', (roomId) => {
+    socket.join(`auction:${roomId}`)
+  })
+  socket.on('auction:leave', (roomId) => {
+    socket.leave(`auction:${roomId}`)
+  })
+
   socket.on('disconnect', () => {
     logger.info(`Socket disconnected: ${socket.id}`)
   })

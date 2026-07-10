@@ -38,6 +38,11 @@ const chatRoutes        = require('./routes/chat.routes')
 const activityRoutes    = require('./routes/activity.routes')
 const skinTemplateRoutes = require('./routes/skinTemplate.routes')
 const { affiliateRouter, vipRouter, wishlistRouter, compareRouter, layawayRouter, installmentRouter } = require('./routes/features.routes')
+const profileRoutes = require('./routes/profile.routes')
+const badgeRoutes = require('./routes/badge.routes')
+const achievementRoutes = require('./routes/achievement.routes')
+const auctionRoutes = require('./routes/auction.routes')
+const marketplaceRoutes = require('./routes/marketplace.routes')
 
 const app = express()
 const server = http.createServer(app)
@@ -91,6 +96,11 @@ app.use('/api/wishlist',  wishlistRouter)
 app.use('/api/compare',   compareRouter)
 app.use('/api/layaway',   layawayRouter)
 app.use('/api/installment', installmentRouter)
+app.use('/api/profile', profileRoutes)
+app.use('/api/badges', badgeRoutes)
+app.use('/api/achievements', achievementRoutes)
+app.use('/api/auctions', auctionRoutes)
+app.use('/api/marketplace', marketplaceRoutes)
 
 
 app.use(notFound)
@@ -105,6 +115,13 @@ const { checkOverdueLayaways } = require('./controllers/layaway.controller')
 checkOverdueLayaways()
 // Sau đó chạy mỗi 1 giờ
 setInterval(checkOverdueLayaways, 60 * 60 * 1000)
+
+// ── Cron: Đóng phiên đấu giá đã hết giờ, chốt người thắng ───────────────────
+const { closeExpiredRooms } = require('./controllers/auction.controller')
+// Chạy ngay khi khởi động (phòng trường hợp server restart giữa phiên)
+closeExpiredRooms()
+// Sau đó kiểm tra mỗi 15 giây để chốt đúng giờ (đấu giá cần realtime hơn layaway)
+setInterval(closeExpiredRooms, 15 * 1000)
 
 // ── Graceful shutdown ────────────────────────────────────────────────────────
 const prisma = require('./config/prisma')

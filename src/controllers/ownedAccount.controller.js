@@ -57,6 +57,7 @@ const getMyOwnedAccounts = async (req, res) => {
       const all = await prisma.userOwnedAccount.findMany({
         where,
         orderBy: { receivedAt: 'desc' },
+        include: { marketplaceListing: { select: { status: true, price: true } } },
       })
       const searchLower = search.toLowerCase()
       const filtered = all.filter(rec => {
@@ -78,6 +79,7 @@ const getMyOwnedAccounts = async (req, res) => {
           skip: (parseInt(page) - 1) * parseInt(limit),
           take: parseInt(limit),
           orderBy: { receivedAt: 'desc' },
+          include: { marketplaceListing: { select: { status: true, price: true } } },
         }),
         prisma.userOwnedAccount.count({ where }),
       ])

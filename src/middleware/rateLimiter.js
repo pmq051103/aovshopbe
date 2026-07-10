@@ -43,4 +43,5 @@ module.exports = {
   auth:    createLimiter(15 * 60 * 1000, 10,  'Quá nhiều lần đăng nhập, thử lại sau 15 phút'),
   spin:    createLimiter(60 * 1000,       10,  'Quay quá nhanh, thử lại sau'),
   deposit: createLimiter(60 * 1000,       5,   'Tạo quá nhiều lệnh nạp tiền, thử lại sau'),
+  bid:     createLimiter(60 * 1000,       20,  'Đặt giá quá nhanh, thử lại sau'),
 };
