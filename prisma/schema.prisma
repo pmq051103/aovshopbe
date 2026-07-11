@@ -73,6 +73,8 @@ model User {
   auctionRoomsWon     AuctionRoom[]        @relation("AuctionWinner")
   marketplaceListings MarketplaceListing[] @relation("MarketplaceSeller")
   marketplacePurchases MarketplaceListing[] @relation("MarketplaceBuyer")
+  sellerRatingsReceived SellerRating[]      @relation("SellerRatingsReceived")
+  sellerRatingsGiven    SellerRating[]      @relation("SellerRatingsGiven")
 
   @@map("users")
 }
@@ -1527,6 +1529,23 @@ model MarketplaceListing {
   @@index([buyerId])
   @@index([status])
   @@map("marketplace_listings")
+}
+
+model SellerRating {
+  id        String   @id @default(uuid())
+  sellerId  String
+  raterId   String
+  stars     Int      // 1-5
+  comment   String?  @db.VarChar(500)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seller User @relation("SellerRatingsReceived", fields: [sellerId], references: [id])
+  rater  User @relation("SellerRatingsGiven", fields: [raterId], references: [id])
+
+  @@unique([sellerId, raterId])
+  @@index([sellerId])
+  @@map("seller_ratings")
 }
 
 enum MarketplaceListingStatus {

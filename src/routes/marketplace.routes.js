@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const ctrl = require('../controllers/marketplace.controller')
-const { protect, adminOnly } = require('../middleware/authMiddleware')
+const { protect, adminOnly, optionalAuth } = require('../middleware/authMiddleware')
 const { uploadAccountImages } = require('../config/cloudinary')
 
 // Public
@@ -16,6 +16,11 @@ router.get('/mine/purchases', protect, ctrl.getMyPurchases)
 router.post('/', protect, uploadAccountImages.array('images', 10), ctrl.createListing)
 router.post('/:id/cancel', protect, ctrl.cancelListing)
 router.post('/:id/buy', protect, ctrl.buyListing)
+
+// Hồ sơ người bán (public, click từ trang chi tiết tin đăng)
+router.get('/sellers/:sellerId/profile', optionalAuth, ctrl.getSellerProfile)
+router.get('/sellers/:sellerId/listings', ctrl.getSellerListings)
+router.post('/sellers/:sellerId/rate', protect, ctrl.rateSeller)
 
 router.get('/:id', ctrl.getListingDetail)
 

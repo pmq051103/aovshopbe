@@ -26,8 +26,8 @@ const parseSnapshot = (rec) => {
   } catch { return {} }
 }
 
-// Acc được coi là "có thông tin" nếu còn giữ bind email/sdt/facebook trong snapshot
-const snapshotHasFullInfo = (snap) => !!(snap?.gameBindEmail || snap?.gameBindPhone || snap?.gameBindFacebook)
+// Acc được coi là "có thông tin" nếu còn giữ bind email/sdt, hoặc facebook liên kết SỐNG (RIP/không liên kết vẫn tính là trắng)
+const snapshotHasFullInfo = (snap) => !!(snap?.gameBindEmail || snap?.gameBindPhone || snap?.gameBindFacebook === 'LIVE')
 
 const withSnapshot = (listing) => ({
   ...listing,
@@ -87,6 +87,86 @@ const getListingDetail = async (req, res) => {
     })
     if (!listing) return res.status(404).json({ success: false, message: 'Không tìm thấy tin đăng' })
     res.json({ success: true, data: withSnapshot(listing) })
+  } catch (e) { res.status(500).json({ success: false, message: e.message }) }
+}
+
+// ── Public: hồ sơ người bán (click từ trang chi tiết) ───────────────────
+const getSellerProfile = async (req, res) => {
+  try {
+    const { sellerId } = req.params
+    const seller = await prisma.user.findUnique({
+      where: { id: sellerId },
+      select: {
+        id: true, username: true, displayName: true, avatar: true, createdAt: true,
+        sellerTier: true, sellerDepositAmount: true, sellerMaxSellPrice: true,
+      },
+    })
+    if (!seller) return res.status(404).json({ success: false, message: 'Không tìm thấy người bán' })
+
+    const [soldCount, activeCount, ratingAgg, myRating] = await Promise.all([
+      prisma.marketplaceListing.count({ where: { sellerId, status: 'SOLD' } }),
+      prisma.marketplaceListing.count({ where: { sellerId, status: 'APPROVED' } }),
+      prisma.sellerRating.aggregate({ where: { sellerId }, _avg: { stars: true }, _count: { stars: true } }),
+      req.user ? prisma.sellerRating.findUnique({ where: { sellerId_raterId: { sellerId, raterId: req.user.id } } }) : null,
+    ])
+
+    res.json({
+      success: true,
+      data: {
+        ...seller,
+        soldCount,
+        activeCount,
+        avgRating: ratingAgg._avg.stars || 0,
+        ratingCount: ratingAgg._count.stars || 0,
+        myRating: myRating?.stars || 0,
+      },
+    })
+  } catch (e) { res.status(500).json({ success: false, message: e.message }) }
+}
+
+// Tin đang bán khác của người bán này (để hiện ở trang chi tiết + trang hồ sơ)
+const getSellerListings = async (req, res) => {
+  try {
+    const { sellerId } = req.params
+    const { excludeId, limit = 8 } = req.query
+    const listings = await prisma.marketplaceListing.findMany({
+      where: { sellerId, status: 'APPROVED', ...(excludeId ? { id: { not: excludeId } } : {}) },
+      include: { seller: { select: SELLER_PUBLIC_SELECT }, ownedAccount: true },
+      orderBy: { approvedAt: 'desc' },
+      take: parseInt(limit),
+    })
+    res.json({ success: true, data: listings.map(withSnapshot) })
+  } catch (e) { res.status(500).json({ success: false, message: e.message }) }
+}
+
+// Đánh giá sao cho người bán (upsert — mỗi user chỉ 1 đánh giá / người bán, sửa lại thì ghi đè)
+const rateSeller = async (req, res) => {
+  try {
+    const { sellerId } = req.params
+    const { stars, comment } = req.body
+    const starsNum = parseInt(stars)
+
+    if (sellerId === req.user.id) return res.status(400).json({ success: false, message: 'Không thể tự đánh giá bản thân' })
+    if (!Number.isInteger(starsNum) || starsNum < 1 || starsNum > 5) {
+      return res.status(400).json({ success: false, message: 'Số sao phải từ 1 đến 5' })
+    }
+
+    const seller = await prisma.user.findUnique({ where: { id: sellerId }, select: { id: true } })
+    if (!seller) return res.status(404).json({ success: false, message: 'Không tìm thấy người bán' })
+
+    const rating = await prisma.sellerRating.upsert({
+      where: { sellerId_raterId: { sellerId, raterId: req.user.id } },
+      create: { sellerId, raterId: req.user.id, stars: starsNum, comment: comment || null },
+      update: { stars: starsNum, comment: comment || null },
+    })
+
+    const ratingAgg = await prisma.sellerRating.aggregate({ where: { sellerId }, _avg: { stars: true }, _count: { stars: true } })
+
+    res.json({
+      success: true,
+      data: { myRating: rating.stars, avgRating: ratingAgg._avg.stars || 0, ratingCount: ratingAgg._count.stars || 0 },
+      message: 'Đã gửi đánh giá',
+    })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }
 
@@ -182,7 +262,7 @@ const createListing = async (req, res) => {
       })
     }
 
-    const hasFullInfo = !!(gameBindEmail || gameBindPhone || (gameBindFacebook && gameBindFacebook !== 'NONE'))
+    const hasFullInfo = !!(gameBindEmail || gameBindPhone || gameBindFacebook === 'LIVE')
     const requiredTier = hasFullInfo ? 'TIER_FULL' : 'TIER_BLANK'
 
     if (TIER_RANK[me.sellerTier] < TIER_RANK[requiredTier]) {
@@ -504,6 +584,7 @@ const adminSetSellerTier = async (req, res) => {
 module.exports = {
   getListings, getListingDetail, getMySellerStatus, getMySellableAccounts, getMyListings, getMyPurchases,
   createListing, cancelListing, buyListing,
+  getSellerProfile, getSellerListings, rateSeller,
   adminGetListings, adminApproveListing, adminRejectListing,
   adminGetConfig, adminSetConfig, getPublicFeePercent,
   adminGetSellers, adminSetSellerTier,
