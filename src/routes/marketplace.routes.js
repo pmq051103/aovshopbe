@@ -22,12 +22,13 @@ router.get('/sellers/:sellerId/profile', optionalAuth, ctrl.getSellerProfile)
 router.get('/sellers/:sellerId/listings', ctrl.getSellerListings)
 router.post('/sellers/:sellerId/rate', protect, ctrl.rateSeller)
 
-router.get('/:id', ctrl.getListingDetail)
+router.get('/:id', optionalAuth, ctrl.getListingDetail)
 
 // Admin — tin đăng
 router.get('/admin/all', protect, adminOnly, ctrl.adminGetListings)
 router.post('/admin/:id/approve', protect, adminOnly, ctrl.adminApproveListing)
 router.post('/admin/:id/reject', protect, adminOnly, ctrl.adminRejectListing)
+router.post('/admin/:id/cancel', protect, adminOnly, ctrl.adminCancelListing)
 
 // Admin — cấu hình (phí sàn tự do + nội dung liên hệ cấp quyền)
 router.get('/admin/config', protect, adminOnly, ctrl.adminGetConfig)

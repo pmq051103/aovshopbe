@@ -86,7 +86,22 @@ const getListingDetail = async (req, res) => {
       },
     })
     if (!listing) return res.status(404).json({ success: false, message: 'Không tìm thấy tin đăng' })
-    res.json({ success: true, data: withSnapshot(listing) })
+
+    const result = withSnapshot(listing)
+    const isPrivileged = req.user && (req.user.id === listing.sellerId || req.user.role === 'ADMIN')
+
+    // Chỉ chủ tin đăng hoặc admin mới thấy tài khoản/mật khẩu và email/sđt bind thật —
+    // người xem công khai chỉ thấy CÓ/KHÔNG (để hiện badge) chứ không thấy giá trị thật, tránh lộ acc trước khi mua
+    if (!isPrivileged && result.snapshot) {
+      const { gameUsername, gamePassword, gameBindEmail, gameBindPhone, ...publicSnap } = result.snapshot
+      result.snapshot = {
+        ...publicSnap,
+        gameBindEmail: gameBindEmail ? true : null,
+        gameBindPhone: gameBindPhone ? true : null,
+      }
+    }
+
+    res.json({ success: true, data: result })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }
 
@@ -426,12 +441,21 @@ const buyListing = async (req, res) => {
 // ── Admin: tin đăng ─────────────────────────────────────────────────────
 const adminGetListings = async (req, res) => {
   try {
-    const { status } = req.query
-    const where = status ? { status } : {}
+    const { status, search } = req.query
+    const where = {}
+    if (status) where.status = status
+    if (search) {
+      where.OR = [
+        { title: { contains: search } },
+        { seller: { username: { contains: search } } },
+        { seller: { displayName: { contains: search } } },
+        { seller: { email: { contains: search } } },
+      ]
+    }
     const listings = await prisma.marketplaceListing.findMany({
       where,
       include: {
-        seller: { select: { username: true, displayName: true, email: true } },
+        seller: { select: { username: true, displayName: true, email: true, avatar: true, sellerDepositAmount: true, sellerMaxSellPrice: true } },
         buyer: { select: { username: true, displayName: true } },
         ownedAccount: true,
       },
@@ -483,6 +507,33 @@ const adminRejectListing = async (req, res) => {
       },
     })
     emitToUser(listing.sellerId, 'notification', { type: 'MARKETPLACE', title: 'Tin đăng bị từ chối' })
+
+    res.json({ success: true, data: updated })
+  } catch (e) { res.status(500).json({ success: false, message: e.message }) }
+}
+
+// Admin gỡ tin đăng đã duyệt/đang chờ duyệt vì vi phạm (khác với từ chối lúc còn PENDING — cái này áp dụng cả khi đã APPROVED/công khai)
+const adminCancelListing = async (req, res) => {
+  try {
+    const { reason } = req.body
+    const listing = await prisma.marketplaceListing.findUnique({ where: { id: req.params.id } })
+    if (!listing) return res.status(404).json({ success: false, message: 'Không tìm thấy tin đăng' })
+    if (!['PENDING', 'APPROVED'].includes(listing.status)) {
+      return res.status(400).json({ success: false, message: 'Không thể gỡ tin đăng ở trạng thái này (đã bán/đã huỷ/đã từ chối)' })
+    }
+
+    const updated = await prisma.marketplaceListing.update({
+      where: { id: listing.id },
+      data: { status: 'CANCELLED', cancelledAt: new Date(), rejectReason: reason || null },
+    })
+
+    await prisma.notification.create({
+      data: {
+        userId: listing.sellerId, type: 'MARKETPLACE', title: 'Tin đăng đã bị gỡ bởi admin',
+        message: `"${listing.title}" đã bị admin gỡ khỏi chợ trao đổi do vi phạm${reason ? `: ${reason}` : ''}.`,
+      },
+    })
+    emitToUser(listing.sellerId, 'notification', { type: 'MARKETPLACE', title: 'Tin đăng đã bị gỡ bởi admin' })
 
     res.json({ success: true, data: updated })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
@@ -585,7 +636,7 @@ module.exports = {
   getListings, getListingDetail, getMySellerStatus, getMySellableAccounts, getMyListings, getMyPurchases,
   createListing, cancelListing, buyListing,
   getSellerProfile, getSellerListings, rateSeller,
-  adminGetListings, adminApproveListing, adminRejectListing,
+  adminGetListings, adminApproveListing, adminRejectListing, adminCancelListing,
   adminGetConfig, adminSetConfig, getPublicFeePercent,
   adminGetSellers, adminSetSellerTier,
 }

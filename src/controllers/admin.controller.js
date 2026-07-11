@@ -463,7 +463,7 @@ const getAllDeposits = async (req, res) => {
 
 const getBadgeCounts = async (req, res) => {
   try {
-    const [pendingOrders, pendingDeposits, unreadTickets, pendingTopup, pendingCards, pendingAffiliates, pendingWithdrawals] = await Promise.all([
+    const [pendingOrders, pendingDeposits, unreadTickets, pendingTopup, pendingCards, pendingAffiliates, pendingWithdrawals, pendingMarketplace] = await Promise.all([
       prisma.order.count({ where: { status: 'PENDING' } }),
       prisma.deposit.count({ where: { status: 'PENDING' } }),
       prisma.ticket.count({
@@ -476,6 +476,7 @@ const getBadgeCounts = async (req, res) => {
       prisma.cardDeposit.count({ where: { status: 'PENDING' } }),
       prisma.affiliate.count({ where: { status: 'PENDING' } }),
       prisma.affiliateWithdrawal.count({ where: { status: 'PENDING' } }),
+      prisma.marketplaceListing.count({ where: { status: 'PENDING' } }),
     ])
 
     res.json({
@@ -488,6 +489,7 @@ const getBadgeCounts = async (req, res) => {
         '/admin/card-config': pendingCards,
         // Gộp cả CTV chờ duyệt và yêu cầu rút tiền chờ xử lý vào cùng badge menu Affiliate
         '/admin/affiliate':   pendingAffiliates + pendingWithdrawals,
+        '/admin/marketplace': pendingMarketplace,
       }
     })
   } catch (e) {
