@@ -62,6 +62,8 @@ model User {
   // ── Cấp phép bán acc trên Chợ Trao Đổi ────────────────────────────────────
   sellerTier          SellerTier @default(NONE)
   sellerTierNote      String?    @db.VarChar(255) // ghi chú admin (vd: "đã cọc 2tr, nâng TIER_FULL")
+  sellerDepositAmount Decimal?   @db.Decimal(15, 2) // số tiền user đã cọc cho admin để được cấp quyền bán
+  sellerMaxSellPrice  Decimal?   @db.Decimal(15, 2) // giá bán tối đa admin cho phép, tính theo mức cọc (vd cọc 10tr → bán acc dưới 5tr)
   sellerTierUpdatedAt DateTime?
   sellerTierUpdatedBy String?
 
@@ -1499,12 +1501,14 @@ enum AuctionRoomStatus {
 model MarketplaceListing {
   id             String                    @id @default(uuid())
   sellerId       String
-  ownedAccountId String                    @unique // acc user đang sở hữu (UserOwnedAccount) đem bán
+  ownedAccountId String?                   @unique // (legacy) acc user đang sở hữu qua shop (UserOwnedAccount) đem bán — không dùng cho tin đăng tự nhập
   title          String                    @db.VarChar(255)
   description    String?                   @db.Text
   price          Decimal                   @db.Decimal(15, 2)
   feePercent     Decimal                   @db.Decimal(5, 2) // % phí sàn tại thời điểm đăng (snapshot, admin cấu hình tự do)
   hasFullInfo    Boolean                   @default(false)   // true = acc có bind info (email/sdt/fb) → yêu cầu sellerTier TIER_FULL
+  contactInfo    String?                   @db.VarChar(255)  // Zalo/SĐT người bán để buyer liên hệ trao đổi trước khi mua
+  snapshotData   String?                   @db.LongText      // thông tin acc tự nhập (title/rank/server/champions/skins/level/images/bind info) khi không gắn owned account
   status         MarketplaceListingStatus  @default(PENDING)
   rejectReason   String?                   @db.Text
   approvedAt     DateTime?
@@ -1517,7 +1521,7 @@ model MarketplaceListing {
 
   seller         User                      @relation("MarketplaceSeller", fields: [sellerId], references: [id])
   buyer          User?                     @relation("MarketplaceBuyer", fields: [buyerId], references: [id])
-  ownedAccount   UserOwnedAccount          @relation(fields: [ownedAccountId], references: [id])
+  ownedAccount   UserOwnedAccount?         @relation(fields: [ownedAccountId], references: [id])
 
   @@index([sellerId])
   @@index([buyerId])

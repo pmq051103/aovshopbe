@@ -31,8 +31,13 @@ const snapshotHasFullInfo = (snap) => !!(snap?.gameBindEmail || snap?.gameBindPh
 
 const withSnapshot = (listing) => ({
   ...listing,
-  snapshot: listing.ownedAccount ? parseSnapshot(listing.ownedAccount) : null,
+  snapshot: listing.ownedAccount ? parseSnapshot(listing.ownedAccount) : parseSnapshot(listing),
 })
+
+const SELLER_PUBLIC_SELECT = {
+  id: true, username: true, displayName: true, avatar: true,
+  sellerDepositAmount: true, sellerMaxSellPrice: true,
+}
 
 // ── Public: duyệt chợ ──────────────────────────────────────────────────
 const getListings = async (req, res) => {
@@ -52,7 +57,7 @@ const getListings = async (req, res) => {
       prisma.marketplaceListing.findMany({
         where,
         include: {
-          seller: { select: { id: true, username: true, displayName: true, avatar: true } },
+          seller: { select: SELLER_PUBLIC_SELECT },
           ownedAccount: true,
         },
         orderBy,
@@ -75,7 +80,7 @@ const getListingDetail = async (req, res) => {
     const listing = await prisma.marketplaceListing.findUnique({
       where: { id: req.params.id },
       include: {
-        seller: { select: { id: true, username: true, displayName: true, avatar: true, createdAt: true } },
+        seller: { select: { ...SELLER_PUBLIC_SELECT, createdAt: true } },
         buyer: { select: { id: true, username: true, displayName: true } },
         ownedAccount: true,
       },
@@ -91,13 +96,18 @@ const getMySellerStatus = async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { sellerTier: true, sellerTierNote: true, sellerTierUpdatedAt: true },
+      select: {
+        sellerTier: true, sellerTierNote: true, sellerTierUpdatedAt: true,
+        sellerDepositAmount: true, sellerMaxSellPrice: true,
+      },
     })
     res.json({
       success: true,
       data: {
         sellerTier: user.sellerTier,
         note: user.sellerTierNote,
+        depositAmount: user.sellerDepositAmount,
+        maxSellPrice: user.sellerMaxSellPrice,
         updatedAt: user.sellerTierUpdatedAt,
         contactInfo: await getSellerContactInfo(),
       },
@@ -149,11 +159,21 @@ const TIER_RANK = { NONE: 0, TIER_BLANK: 1, TIER_FULL: 2 }
 
 const createListing = async (req, res) => {
   try {
-    const { ownedAccountId, title, description, price } = req.body
+    const {
+      title, description, price, contactInfo,
+      rank, server, champions, skins, level,
+      gameUsername, gamePassword, gameBindEmail, gameBindPhone, gameBindFacebook,
+    } = req.body
+
     const priceNum = parseFloat(price)
     if (!priceNum || priceNum <= 0) return res.status(400).json({ success: false, message: 'Giá bán không hợp lệ' })
+    if (!title?.trim()) return res.status(400).json({ success: false, message: 'Vui lòng nhập tiêu đề tin đăng' })
+    if (!contactInfo?.trim()) return res.status(400).json({ success: false, message: 'Vui lòng nhập thông tin liên hệ (Zalo/SĐT) để người mua liên hệ' })
 
-    const me = await prisma.user.findUnique({ where: { id: req.user.id }, select: { sellerTier: true } })
+    const me = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { sellerTier: true, sellerMaxSellPrice: true },
+    })
     if (!me.sellerTier || me.sellerTier === 'NONE') {
       return res.status(403).json({
         success: false,
@@ -162,15 +182,7 @@ const createListing = async (req, res) => {
       })
     }
 
-    const owned = await prisma.userOwnedAccount.findFirst({
-      where: { id: ownedAccountId, userId: req.user.id },
-      include: { marketplaceListing: true },
-    })
-    if (!owned) return res.status(404).json({ success: false, message: 'Không tìm thấy tài khoản để bán' })
-    if (owned.marketplaceListing) return res.status(400).json({ success: false, message: 'Tài khoản này đã được đăng bán rồi' })
-
-    const snap = parseSnapshot(owned)
-    const hasFullInfo = snapshotHasFullInfo(snap)
+    const hasFullInfo = !!(gameBindEmail || gameBindPhone || (gameBindFacebook && gameBindFacebook !== 'NONE'))
     const requiredTier = hasFullInfo ? 'TIER_FULL' : 'TIER_BLANK'
 
     if (TIER_RANK[me.sellerTier] < TIER_RANK[requiredTier]) {
@@ -183,17 +195,46 @@ const createListing = async (req, res) => {
       })
     }
 
+    const maxSellPrice = me.sellerMaxSellPrice ? parseFloat(me.sellerMaxSellPrice) : null
+    if (maxSellPrice && priceNum > maxSellPrice) {
+      return res.status(403).json({
+        success: false,
+        code: 'PRICE_EXCEEDS_LIMIT',
+        message: `Giá bán vượt quá mức cho phép theo cọc của bạn (tối đa ${maxSellPrice.toLocaleString('vi-VN')}đ).`,
+      })
+    }
+
+    const images = req.files?.map((f, i) => ({ url: f.path, publicId: f.filename, sortOrder: i })) || []
+    if (images.length === 0) return res.status(400).json({ success: false, message: 'Vui lòng tải lên ít nhất 1 hình ảnh acc' })
+
+    const snapshot = {
+      title: title.trim(),
+      rank: rank || null,
+      server: server || null,
+      champions: champions ? parseInt(champions) : null,
+      skins: skins ? parseInt(skins) : null,
+      level: level ? parseInt(level) : null,
+      gameUsername: gameUsername || null,
+      gamePassword: gamePassword || null,
+      gameBindEmail: gameBindEmail || null,
+      gameBindPhone: gameBindPhone || null,
+      gameBindFacebook: gameBindFacebook || 'NONE',
+      images,
+      thumbnailUrl: images[0]?.url || null,
+    }
+
     const feePercent = await getFeePercent()
 
     const listing = await prisma.marketplaceListing.create({
       data: {
         sellerId: req.user.id,
-        ownedAccountId,
-        title: title || snap.title || 'Tài khoản game',
-        description,
+        title: title.trim(),
+        description: description || null,
         price: priceNum,
         feePercent,
         hasFullInfo,
+        contactInfo: contactInfo.trim(),
+        snapshotData: JSON.stringify(snapshot),
       },
     })
 
@@ -258,13 +299,15 @@ const buyListing = async (req, res) => {
         ],
       })
 
+      const snapshotToCopy = listing.ownedAccount ? listing.ownedAccount.snapshotData : listing.snapshotData
+
       const newOwned = await tx.userOwnedAccount.create({
         data: {
           userId: buyerId,
-          accountId: listing.ownedAccount.accountId,
+          accountId: listing.ownedAccount?.accountId || null,
           sourceType: 'MARKETPLACE_PURCHASE',
           sourceId: listing.id,
-          snapshotData: listing.ownedAccount.snapshotData,
+          snapshotData: snapshotToCopy,
         },
       })
 
@@ -416,6 +459,7 @@ const adminGetSellers = async (req, res) => {
       select: {
         id: true, username: true, displayName: true, email: true, avatar: true,
         sellerTier: true, sellerTierNote: true, sellerTierUpdatedAt: true,
+        sellerDepositAmount: true, sellerMaxSellPrice: true,
         _count: { select: { marketplaceListings: true } },
       },
       orderBy: { sellerTierUpdatedAt: 'desc' },
@@ -427,7 +471,7 @@ const adminGetSellers = async (req, res) => {
 
 const adminSetSellerTier = async (req, res) => {
   try {
-    const { userId, sellerTier, note } = req.body
+    const { userId, sellerTier, note, depositAmount, maxSellPrice } = req.body
     if (!['NONE', 'TIER_BLANK', 'TIER_FULL'].includes(sellerTier)) {
       return res.status(400).json({ success: false, message: 'Cấp quyền không hợp lệ' })
     }
@@ -437,6 +481,8 @@ const adminSetSellerTier = async (req, res) => {
       data: {
         sellerTier,
         sellerTierNote: note || null,
+        sellerDepositAmount: depositAmount !== undefined && depositAmount !== '' ? parseFloat(depositAmount) : null,
+        sellerMaxSellPrice: maxSellPrice !== undefined && maxSellPrice !== '' ? parseFloat(maxSellPrice) : null,
         sellerTierUpdatedAt: new Date(),
         sellerTierUpdatedBy: req.user.id,
       },

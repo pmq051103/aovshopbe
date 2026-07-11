@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const ctrl = require('../controllers/marketplace.controller')
 const { protect, adminOnly } = require('../middleware/authMiddleware')
+const { uploadAccountImages } = require('../config/cloudinary')
 
 // Public
 router.get('/', ctrl.getListings)
@@ -12,7 +13,7 @@ router.get('/mine/seller-status', protect, ctrl.getMySellerStatus)
 router.get('/mine/sellable', protect, ctrl.getMySellableAccounts)
 router.get('/mine/listings', protect, ctrl.getMyListings)
 router.get('/mine/purchases', protect, ctrl.getMyPurchases)
-router.post('/', protect, ctrl.createListing)
+router.post('/', protect, uploadAccountImages.array('images', 10), ctrl.createListing)
 router.post('/:id/cancel', protect, ctrl.cancelListing)
 router.post('/:id/buy', protect, ctrl.buyListing)
 
