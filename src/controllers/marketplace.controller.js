@@ -3,6 +3,7 @@ const { emitToUser, emitToAdmins } = require('../config/socket')
 const { checkAndGrantAchievements } = require('./achievement.controller')
 
 const DEFAULT_FEE_PERCENT = 10
+const DEFAULT_CONTACT_ZALO = 'Liên hệ Zalo Admin để đặt cọc và nâng cấp quyền bán acc'
 
 const getFeePercent = async () => {
   try {
@@ -12,11 +13,21 @@ const getFeePercent = async () => {
   } catch { return DEFAULT_FEE_PERCENT }
 }
 
+const getSellerContactInfo = async () => {
+  try {
+    const cfg = await prisma.siteConfig.findUnique({ where: { key: 'seller_permission_contact' } })
+    return cfg?.value || DEFAULT_CONTACT_ZALO
+  } catch { return DEFAULT_CONTACT_ZALO }
+}
+
 const parseSnapshot = (rec) => {
   try {
     return typeof rec.snapshotData === 'string' ? JSON.parse(rec.snapshotData) : rec.snapshotData
   } catch { return {} }
 }
+
+// Acc được coi là "có thông tin" nếu còn giữ bind email/sdt/facebook trong snapshot
+const snapshotHasFullInfo = (snap) => !!(snap?.gameBindEmail || snap?.gameBindPhone || snap?.gameBindFacebook)
 
 const withSnapshot = (listing) => ({
   ...listing,
@@ -75,14 +86,39 @@ const getListingDetail = async (req, res) => {
 }
 
 // ── User ──────────────────────────────────────────────────────────────
+// Trạng thái cấp phép bán acc của user hiện tại — FE dùng để hiện gate hoặc form đăng bán
+const getMySellerStatus = async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { sellerTier: true, sellerTierNote: true, sellerTierUpdatedAt: true },
+    })
+    res.json({
+      success: true,
+      data: {
+        sellerTier: user.sellerTier,
+        note: user.sellerTierNote,
+        updatedAt: user.sellerTierUpdatedAt,
+        contactInfo: await getSellerContactInfo(),
+      },
+    })
+  } catch (e) { res.status(500).json({ success: false, message: e.message }) }
+}
+
 // Danh sách acc đang sở hữu mà CHƯA đem bán (để chọn khi đăng tin)
+// Kèm cờ hasFullInfo + requiredTier để FE biết acc nào cần cấp nào mới được bán
 const getMySellableAccounts = async (req, res) => {
   try {
     const accounts = await prisma.userOwnedAccount.findMany({
       where: { userId: req.user.id, marketplaceListing: null },
       orderBy: { receivedAt: 'desc' },
     })
-    res.json({ success: true, data: accounts })
+    const data = accounts.map(acc => {
+      const snap = parseSnapshot(acc)
+      const hasFullInfo = snapshotHasFullInfo(snap)
+      return { ...acc, snapshot: snap, hasFullInfo, requiredTier: hasFullInfo ? 'TIER_FULL' : 'TIER_BLANK' }
+    })
+    res.json({ success: true, data })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }
 
@@ -108,11 +144,23 @@ const getMyPurchases = async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }
 
+// Thứ tự cấp quyền để so sánh "đủ hay chưa đủ"
+const TIER_RANK = { NONE: 0, TIER_BLANK: 1, TIER_FULL: 2 }
+
 const createListing = async (req, res) => {
   try {
     const { ownedAccountId, title, description, price } = req.body
     const priceNum = parseFloat(price)
     if (!priceNum || priceNum <= 0) return res.status(400).json({ success: false, message: 'Giá bán không hợp lệ' })
+
+    const me = await prisma.user.findUnique({ where: { id: req.user.id }, select: { sellerTier: true } })
+    if (!me.sellerTier || me.sellerTier === 'NONE') {
+      return res.status(403).json({
+        success: false,
+        code: 'SELLER_NOT_AUTHORIZED',
+        message: `Bạn chưa được cấp quyền bán acc. ${await getSellerContactInfo()}`,
+      })
+    }
 
     const owned = await prisma.userOwnedAccount.findFirst({
       where: { id: ownedAccountId, userId: req.user.id },
@@ -121,16 +169,31 @@ const createListing = async (req, res) => {
     if (!owned) return res.status(404).json({ success: false, message: 'Không tìm thấy tài khoản để bán' })
     if (owned.marketplaceListing) return res.status(400).json({ success: false, message: 'Tài khoản này đã được đăng bán rồi' })
 
+    const snap = parseSnapshot(owned)
+    const hasFullInfo = snapshotHasFullInfo(snap)
+    const requiredTier = hasFullInfo ? 'TIER_FULL' : 'TIER_BLANK'
+
+    if (TIER_RANK[me.sellerTier] < TIER_RANK[requiredTier]) {
+      return res.status(403).json({
+        success: false,
+        code: 'SELLER_TIER_TOO_LOW',
+        message: hasFullInfo
+          ? `Acc này còn thông tin bind (email/sdt/fb) — cần cấp "Bán acc có thông tin" mới đăng bán được. ${await getSellerContactInfo()}`
+          : `Bạn cần được cấp quyền bán acc trước. ${await getSellerContactInfo()}`,
+      })
+    }
+
     const feePercent = await getFeePercent()
 
     const listing = await prisma.marketplaceListing.create({
       data: {
         sellerId: req.user.id,
         ownedAccountId,
-        title: title || parseSnapshot(owned).title || 'Tài khoản game',
+        title: title || snap.title || 'Tài khoản game',
         description,
         price: priceNum,
         feePercent,
+        hasFullInfo,
       },
     })
 
@@ -237,7 +300,7 @@ const buyListing = async (req, res) => {
   }
 }
 
-// ── Admin ─────────────────────────────────────────────────────────────
+// ── Admin: tin đăng ─────────────────────────────────────────────────────
 const adminGetListings = async (req, res) => {
   try {
     const { status } = req.query
@@ -302,8 +365,9 @@ const adminRejectListing = async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }
 
-const adminGetFeePercent = async (req, res) => {
-  res.json({ success: true, data: { feePercent: await getFeePercent() } })
+// ── Admin: cấu hình chung (phí sàn tự do + nội dung liên hệ cấp quyền) ──
+const adminGetConfig = async (req, res) => {
+  res.json({ success: true, data: { feePercent: await getFeePercent(), contactInfo: await getSellerContactInfo() } })
 }
 
 // Public — để user xem trước % phí sàn khi đăng bán
@@ -311,24 +375,90 @@ const getPublicFeePercent = async (req, res) => {
   res.json({ success: true, data: { feePercent: await getFeePercent() } })
 }
 
-const adminSetFeePercent = async (req, res) => {
+const adminSetConfig = async (req, res) => {
   try {
-    const { feePercent } = req.body
-    const val = parseFloat(feePercent)
-    if (![5, 10].includes(val)) return res.status(400).json({ success: false, message: 'Phí sàn chỉ chấp nhận 5% hoặc 10%' })
+    const { feePercent, contactInfo } = req.body
 
-    await prisma.siteConfig.upsert({
-      where: { key: 'marketplace_fee_percent' },
-      create: { key: 'marketplace_fee_percent', value: String(val), group: 'marketplace', type: 'number' },
-      update: { value: String(val) },
+    if (feePercent !== undefined) {
+      const val = parseFloat(feePercent)
+      if (!Number.isFinite(val) || val < 0 || val > 100) {
+        return res.status(400).json({ success: false, message: 'Phí sàn phải là số từ 0 đến 100' })
+      }
+      await prisma.siteConfig.upsert({
+        where: { key: 'marketplace_fee_percent' },
+        create: { key: 'marketplace_fee_percent', value: String(val), group: 'marketplace', type: 'number' },
+        update: { value: String(val) },
+      })
+    }
+
+    if (contactInfo !== undefined) {
+      await prisma.siteConfig.upsert({
+        where: { key: 'seller_permission_contact' },
+        create: { key: 'seller_permission_contact', value: contactInfo, group: 'marketplace', type: 'text' },
+        update: { value: contactInfo },
+      })
+    }
+
+    res.json({ success: true, data: { feePercent: await getFeePercent(), contactInfo: await getSellerContactInfo() } })
+  } catch (e) { res.status(500).json({ success: false, message: e.message }) }
+}
+
+// ── Admin: cấp quyền bán acc cho user ────────────────────────────────────
+const adminGetSellers = async (req, res) => {
+  try {
+    const { search } = req.query
+    const where = search
+      ? { OR: [{ username: { contains: search } }, { displayName: { contains: search } }, { email: { contains: search } }] }
+      : { sellerTier: { not: 'NONE' } }
+
+    const users = await prisma.user.findMany({
+      where,
+      select: {
+        id: true, username: true, displayName: true, email: true, avatar: true,
+        sellerTier: true, sellerTierNote: true, sellerTierUpdatedAt: true,
+        _count: { select: { marketplaceListings: true } },
+      },
+      orderBy: { sellerTierUpdatedAt: 'desc' },
+      take: 50,
     })
-    res.json({ success: true, data: { feePercent: val } })
+    res.json({ success: true, data: users })
+  } catch (e) { res.status(500).json({ success: false, message: e.message }) }
+}
+
+const adminSetSellerTier = async (req, res) => {
+  try {
+    const { userId, sellerTier, note } = req.body
+    if (!['NONE', 'TIER_BLANK', 'TIER_FULL'].includes(sellerTier)) {
+      return res.status(400).json({ success: false, message: 'Cấp quyền không hợp lệ' })
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        sellerTier,
+        sellerTierNote: note || null,
+        sellerTierUpdatedAt: new Date(),
+        sellerTierUpdatedBy: req.user.id,
+      },
+    })
+
+    const TIER_LABEL = { NONE: 'không được phép bán', TIER_BLANK: 'bán acc trắng thông tin', TIER_FULL: 'bán acc trắng & có thông tin' }
+    await prisma.notification.create({
+      data: {
+        userId, type: 'MARKETPLACE', title: 'Cập nhật quyền bán acc',
+        message: `Quyền bán acc của bạn đã được cập nhật: ${TIER_LABEL[sellerTier]}.`,
+      },
+    })
+    emitToUser(userId, 'notification', { type: 'MARKETPLACE', title: 'Cập nhật quyền bán acc' })
+
+    res.json({ success: true, data: user })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }
 
 module.exports = {
-  getListings, getListingDetail, getMySellableAccounts, getMyListings, getMyPurchases,
+  getListings, getListingDetail, getMySellerStatus, getMySellableAccounts, getMyListings, getMyPurchases,
   createListing, cancelListing, buyListing,
-  adminGetListings, adminApproveListing, adminRejectListing, adminGetFeePercent, adminSetFeePercent,
-  getPublicFeePercent,
+  adminGetListings, adminApproveListing, adminRejectListing,
+  adminGetConfig, adminSetConfig, getPublicFeePercent,
+  adminGetSellers, adminSetSellerTier,
 }

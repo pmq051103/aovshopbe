@@ -8,6 +8,7 @@ router.get('/', ctrl.getListings)
 router.get('/fee', ctrl.getPublicFeePercent)
 
 // User (đặt trước /:id để không bị route generic nuốt mất)
+router.get('/mine/seller-status', protect, ctrl.getMySellerStatus)
 router.get('/mine/sellable', protect, ctrl.getMySellableAccounts)
 router.get('/mine/listings', protect, ctrl.getMyListings)
 router.get('/mine/purchases', protect, ctrl.getMyPurchases)
@@ -17,11 +18,17 @@ router.post('/:id/buy', protect, ctrl.buyListing)
 
 router.get('/:id', ctrl.getListingDetail)
 
-// Admin
+// Admin — tin đăng
 router.get('/admin/all', protect, adminOnly, ctrl.adminGetListings)
 router.post('/admin/:id/approve', protect, adminOnly, ctrl.adminApproveListing)
 router.post('/admin/:id/reject', protect, adminOnly, ctrl.adminRejectListing)
-router.get('/admin/fee', protect, adminOnly, ctrl.adminGetFeePercent)
-router.put('/admin/fee', protect, adminOnly, ctrl.adminSetFeePercent)
+
+// Admin — cấu hình (phí sàn tự do + nội dung liên hệ cấp quyền)
+router.get('/admin/config', protect, adminOnly, ctrl.adminGetConfig)
+router.put('/admin/config', protect, adminOnly, ctrl.adminSetConfig)
+
+// Admin — cấp quyền bán acc
+router.get('/admin/sellers', protect, adminOnly, ctrl.adminGetSellers)
+router.put('/admin/sellers/tier', protect, adminOnly, ctrl.adminSetSellerTier)
 
 module.exports = router

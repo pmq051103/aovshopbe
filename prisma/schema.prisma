@@ -59,6 +59,12 @@ model User {
   referredBy        AffiliateReferral?   @relation("ReferredUser")
 
   // ── Badges / Achievements / Auction / Marketplace (NEW) ──────────────────
+  // ── Cấp phép bán acc trên Chợ Trao Đổi ────────────────────────────────────
+  sellerTier          SellerTier @default(NONE)
+  sellerTierNote      String?    @db.VarChar(255) // ghi chú admin (vd: "đã cọc 2tr, nâng TIER_FULL")
+  sellerTierUpdatedAt DateTime?
+  sellerTierUpdatedBy String?
+
   badges              UserBadge[]
   achievements        UserAchievement[]
   auctionBids         AuctionBid[]
@@ -666,6 +672,13 @@ model News {
 enum Role {
   USER
   ADMIN
+}
+
+// Cấp phép bán acc trên Chợ Trao Đổi — user phải được admin cấp mới đăng bán được.
+enum SellerTier {
+  NONE        // chưa được cấp quyền, không thể đăng bán
+  TIER_BLANK  // được bán acc "trắng thông tin" (không có bind email/sdt/fb)
+  TIER_FULL   // được bán cả acc "có thông tin" (đầy đủ bind, rủi ro cao hơn) — bao gồm luôn quyền TIER_BLANK
 }
 
 enum AccountStatus {
@@ -1490,7 +1503,8 @@ model MarketplaceListing {
   title          String                    @db.VarChar(255)
   description    String?                   @db.Text
   price          Decimal                   @db.Decimal(15, 2)
-  feePercent     Decimal                   @db.Decimal(5, 2) // % phí sàn tại thời điểm đăng (snapshot, admin cấu hình 5% hoặc 10%)
+  feePercent     Decimal                   @db.Decimal(5, 2) // % phí sàn tại thời điểm đăng (snapshot, admin cấu hình tự do)
+  hasFullInfo    Boolean                   @default(false)   // true = acc có bind info (email/sdt/fb) → yêu cầu sellerTier TIER_FULL
   status         MarketplaceListingStatus  @default(PENDING)
   rejectReason   String?                   @db.Text
   approvedAt     DateTime?
