@@ -14,6 +14,30 @@ const md5 = (...parts) => crypto.createHash('md5').update(parts.join('')).digest
 const genRequestId = () => `${Date.now()}${Math.floor(Math.random() * 100000)}`
 
 // ══════════════════════════════════════════════════════════════════════════
+// productlist của đối tác trả VỀ CHUNG cả thẻ game/dịch vụ số lẫn nạp điện thoại.
+// Chỉ những service_code dưới đây mới là NẠP TIỀN ĐIỆN THOẠI thật (viễn thông).
+// Đã đối chiếu trực tiếp với trang "Nạp Tiền Điện Thoại" của đối tác — họ CHỈ có
+// đúng 3 sản phẩm này trong tính năng nạp thẳng (không cần mã thẻ, không cần OTP).
+// Các mã có chữ "OTP" (viettelotp, myvina, myvinasmall, mobits) KHÔNG nằm trong
+// tính năng này — không rõ luồng gọi (có thể cần thêm bước xác thực OTP mà lệnh
+// "topup" hiện tại không hỗ trợ) nên tạm KHÔNG bật để tránh đơn bị treo/lỗi.
+// Cập nhật danh sách này nếu đối tác xác nhận hỗ trợ thêm nhà mạng/loại nạp.
+// ══════════════════════════════════════════════════════════════════════════
+const TELCO_SERVICE_CODES = new Set([
+  'viettelts',
+  'vinatt',
+  'myvinapass',
+])
+
+// Các mã trên không có mệnh giá cố định (đối tác trả value:1 = nhập số tiền tuỳ ý).
+// Tự sinh bộ mệnh giá chuẩn để admin cấu hình/hiển thị cho user chọn.
+// LƯU Ý: đối tác công bố ràng buộc thật trên web của họ (vd Vinaphone dùng mật khẩu:
+// tối thiểu 20.000đ, tối đa 10.000.000đ, bội số 10.000đ) — bộ số dưới đây bám theo
+// mốc tối thiểu 20.000đ để tránh tạo mệnh giá dưới ngưỡng đối tác cho phép.
+
+const STANDARD_TELCO_DENOMS = [20000, 30000, 50000, 100000, 200000, 500000, 1000000]
+
+// ══════════════════════════════════════════════════════════════════════════
 // TẠO LỆNH NẠP — command "topup"
 // Response mẫu: { status: "success", data: { order_code, pay_amount, discount,
 //                 service_code, amount, status: "pending"|"success"|... } }
@@ -96,50 +120,130 @@ const mapStatus = raw => {
 // ══════════════════════════════════════════════════════════════════════════
 // ADMIN — Đồng bộ sản phẩm từ đối tác (productlist) vào PhoneTopupConfig
 // ══════════════════════════════════════════════════════════════════════════
+// Chạy các promise theo từng batch nhỏ để không mở quá nhiều connection DB cùng lúc
+async function runInBatches(items, batchSize, worker) {
+  const results = []
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize)
+    results.push(...(await Promise.all(batch.map(worker))))
+  }
+  return results
+}
+
 const adminSyncProducts = async (req, res) => {
+  const t0 = Date.now()
   try {
     const apiRes = await callProviderProductList()
     const list = Array.isArray(apiRes?.data) ? apiRes.data : []
+    console.log(`[adminSyncProducts] nhận ${list.length} nhóm sản phẩm từ đối tác sau ${Date.now() - t0}ms`)
+
+    // Gom hết item cần sync thành 1 mảng phẳng
+    // CHỈ lấy đúng các mã nạp điện thoại thật (TELCO_SERVICE_CODES) — productlist của
+    // đối tác trả về chung cả thẻ game/dịch vụ số, không lọc sẽ bị lẫn hết vào đây.
+    const flatItems = []
+    for (const product of list) {
+      const serviceCode = product.service_code
+      if (!serviceCode || !TELCO_SERVICE_CODES.has(serviceCode)) continue
+
+      const telcoLabel = product.name
+      const telco = serviceCode.replace(/tt$|ts$|otp$/i, '').toUpperCase()
+      const items = product.items || []
+
+      // Dòng value<=1 chỉ là placeholder "nạp linh hoạt", không phải mệnh giá thật -> luôn bỏ qua.
+      const realItems = items.filter(it => parseFloat(it.value) > 1)
+
+      if (realItems.length === 0) {
+        // Đối tác không cho mệnh giá cố định nào (toàn placeholder) -> tự sinh bộ mệnh giá chuẩn
+        const providerDiscount = parseFloat(items[0]?.discount || 0)
+        for (const denomination of STANDARD_TELCO_DENOMS) {
+          flatItems.push({
+            telco, telcoLabel, serviceCode, denomination,
+            providerDiscount,
+            thumbnailUrl: product.image || null,
+          })
+        }
+      } else {
+        for (const item of realItems) {
+          const denomination = parseFloat(item.value)
+          flatItems.push({
+            telco, telcoLabel, serviceCode, denomination,
+            providerDiscount: parseFloat(item.discount || 0),
+            thumbnailUrl: product.image || null,
+          })
+        }
+      }
+    }
+    console.log(`[adminSyncProducts] tổng ${flatItems.length} mệnh giá cần đồng bộ (đã lọc chỉ nạp điện thoại)`)
+
+    // Đọc toàn bộ config hiện có TRONG 1 QUERY DUY NHẤT thay vì findUnique từng item
+    const existedConfigs = await prisma.phoneTopupConfig.findMany({
+      select: { id: true, serviceCode: true, denomination: true },
+    })
+    const existedMap = new Map(
+      existedConfigs.map(c => [`${c.serviceCode}__${c.denomination}`, c.id])
+    )
 
     let created = 0
     let updated = 0
 
-    for (const product of list) {
-      const serviceCode = product.service_code
-      const telcoLabel = product.name
-      const telco = serviceCode.replace(/tt$|ts$/i, '').toUpperCase()
+    // Ghi song song theo batch (20 item/lần) thay vì tuần tự từng cái một
+    await runInBatches(flatItems, 20, async item => {
+      const key = `${item.serviceCode}__${item.denomination}`
+      const existedId = existedMap.get(key)
+      const data = { ...item, syncedAt: new Date() }
 
-      for (const item of product.items || []) {
-        const denomination = parseFloat(item.value)
-        if (!denomination) continue
-
-        const existed = await prisma.phoneTopupConfig.findUnique({
-          where: { serviceCode_denomination: { serviceCode, denomination } },
+      if (existedId) {
+        await prisma.phoneTopupConfig.update({ where: { id: existedId }, data })
+        updated++
+      } else {
+        await prisma.phoneTopupConfig.create({
+          data: { ...data, enabled: false, extraDiscount: 0 }, // mặc định tắt, admin tự bật sau khi kiểm tra
         })
-
-        const data = {
-          telco,
-          telcoLabel,
-          serviceCode,
-          denomination,
-          providerDiscount: parseFloat(item.discount || 0),
-          thumbnailUrl: product.image || null,
-          syncedAt: new Date(),
-        }
-
-        if (existed) {
-          await prisma.phoneTopupConfig.update({ where: { id: existed.id }, data })
-          updated++
-        } else {
-          await prisma.phoneTopupConfig.create({
-            data: { ...data, enabled: false, extraDiscount: 0 }, // mặc định tắt, admin tự bật sau khi kiểm tra
-          })
-          created++
-        }
+        created++
       }
+    })
+
+    console.log(`[adminSyncProducts] xong sau ${Date.now() - t0}ms — ${created} mới, ${updated} cập nhật`)
+
+    // ── Dọn dẹp config KHÔNG còn thuộc phạm vi lần sync này ─────────────────
+    // Gồm: (a) mã dịch vụ không phải viễn thông (thẻ game cũ còn sót lại từ trước),
+    //      (b) mệnh giá "rác" (vd dòng 1đ) không nằm trong danh sách vừa build.
+    // Config nào ĐÃ CÓ đơn hàng thì chỉ tắt (enabled:false) để giữ lịch sử, không xoá.
+    const targetKeys = new Set(flatItems.map(it => `${it.serviceCode}__${it.denomination}`))
+    const staleConfigs = await prisma.phoneTopupConfig.findMany({
+      where: {
+        OR: [
+          { serviceCode: { notIn: [...TELCO_SERVICE_CODES] } },
+        ],
+      },
+      include: { _count: { select: { orders: true } } },
+    })
+    // Thêm các config viễn thông nhưng mệnh giá không còn hợp lệ (vd dòng 1đ cũ)
+    const telcoConfigs = await prisma.phoneTopupConfig.findMany({
+      where: { serviceCode: { in: [...TELCO_SERVICE_CODES] } },
+      include: { _count: { select: { orders: true } } },
+    })
+    for (const c of telcoConfigs) {
+      const key = `${c.serviceCode}__${c.denomination}`
+      if (!targetKeys.has(key)) staleConfigs.push(c)
     }
 
-    res.json({ success: true, message: `Đồng bộ xong: ${created} mới, ${updated} cập nhật`, data: { created, updated } })
+    const staleIdsNoOrder = staleConfigs.filter(c => c._count.orders === 0).map(c => c.id)
+    const staleIdsWithOrder = staleConfigs.filter(c => c._count.orders > 0).map(c => c.id)
+
+    if (staleIdsNoOrder.length) {
+      await prisma.phoneTopupConfig.deleteMany({ where: { id: { in: staleIdsNoOrder } } })
+    }
+    if (staleIdsWithOrder.length) {
+      await prisma.phoneTopupConfig.updateMany({ where: { id: { in: staleIdsWithOrder } }, data: { enabled: false } })
+    }
+    console.log(`[adminSyncProducts] dọn dẹp: xoá ${staleIdsNoOrder.length}, tắt (có đơn cũ) ${staleIdsWithOrder.length}`)
+
+    res.json({
+      success: true,
+      message: `Đồng bộ xong: ${created} mới, ${updated} cập nhật, đã dọn ${staleIdsNoOrder.length + staleIdsWithOrder.length} mục không còn phù hợp`,
+      data: { created, updated, deleted: staleIdsNoOrder.length, disabled: staleIdsWithOrder.length },
+    })
   } catch (e) {
     console.error('[adminSyncProducts ERROR]', e.response?.data || e.message)
     res.status(502).json({ success: false, message: 'Không lấy được danh sách sản phẩm từ đối tác: ' + (e.response?.data?.message || e.message) })
