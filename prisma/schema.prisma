@@ -47,6 +47,7 @@ model User {
   wheelHistories      WheelHistory[]
   cardDeposits        CardDeposit[]   @relation("UserCardDeposits")
   cardPurchases       CardPurchase[]  @relation("UserCardPurchases")
+  phoneTopupOrders PhoneTopupOrder[] @relation("UserPhoneTopupOrders")
   mysteryBoxOwned     MysteryBoxAccount[]   @relation("MysteryBoxOwner")
   mysteryBoxOpened    MysteryBoxOpenHistory[] @relation("MysteryBoxOpenHistory")
   chatSessions        ChatSession[]
@@ -995,6 +996,61 @@ model CardPurchase {
   @@index([status])
   @@index([createdAt])
   @@map("card_purchases")
+}
+
+model PhoneTopupConfig {
+  id           String   @id @default(uuid())
+  telco        String   @db.VarChar(50)    // VIETTEL, VINAPHONE, MOBIFONE, VIETNAMOBILE
+  telcoLabel   String?  @db.VarChar(100)   // "Viettel trả trước", "Vinaphone trả sau" ...
+  serviceCode  String   @db.VarChar(50)    // service_code lấy từ productlist: viettelts, vietteltt, vinatt, vinats...
+  denomination Decimal  @db.Decimal(15, 2) // mệnh giá (value trong productlist), vd 10000, 50000
+  providerDiscount Decimal @db.Decimal(5, 2) @default(0) // discount đối tác trả về trong productlist (tham khảo)
+  extraDiscount    Decimal @db.Decimal(5, 2) @default(0) // % chiết khấu shop áp thêm cho user (admin cấu hình)
+  enabled      Boolean  @default(true)     // admin bật/tắt cho user thấy & dùng
+  thumbnailUrl String?  @db.Text
+  sortOrder    Int      @default(0)
+  syncedAt     DateTime? // lần cuối đồng bộ từ productlist
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  orders       PhoneTopupOrder[]
+
+  @@unique([serviceCode, denomination])
+  @@index([telco])
+  @@index([enabled])
+  @@map("phone_topup_configs")
+}
+
+model PhoneTopupOrder {
+  id           String   @id @default(uuid())
+  userId       String
+  configId     String?
+  requestId    String   @unique @db.VarChar(100) // request_id mình sinh, gửi lên đối tác
+  orderCode    String?  @db.VarChar(100)          // order_code đối tác trả về sau khi tạo lệnh nạp -> dùng để getstatus
+  phone        String   @db.VarChar(20)
+  telco        String   @db.VarChar(50)
+  serviceCode  String   @db.VarChar(50)
+  amount       Decimal  @db.Decimal(15, 2)        // mệnh giá nạp cho thuê bao
+  price        Decimal  @db.Decimal(15, 2)        // số tiền trừ trong ví user (sau chiết khấu)
+  status       PhoneTopupStatus @default(PENDING)
+  message      String?  @db.VarChar(500)
+  providerData Json?                              // raw response mới nhất từ đối tác (create + getstatus)
+  lastCheckedAt DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation("UserPhoneTopupOrders", fields: [userId], references: [id])
+  config       PhoneTopupConfig? @relation(fields: [configId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([requestId])
+  @@index([createdAt])
+  @@map("phone_topup_orders")
+}
+
+enum PhoneTopupStatus {
+  PENDING   // đã trừ tiền, đang chờ đối tác xử lý / chờ getstatus xác nhận
+  SUCCESS
+  FAILED    // đã hoàn tiền
 }
 
 enum CardDepositStatus {
