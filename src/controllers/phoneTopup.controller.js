@@ -2,6 +2,7 @@ const crypto = require('crypto')
 const axios = require('axios')
 const prisma = require('../config/prisma')
 const { emitToUser, emitToAdmins } = require('../config/socket')
+const { getUserVipDiscounts, recalculateVip } = require('./vip.controller')
 
 // ══════════════════════════════════════════════════════════════════════════
 // CẤU HÌNH — đối tác rechargews (nạp tiền điện thoại tự động)
@@ -355,7 +356,29 @@ const getPublicConfigs = async (req, res) => {
         denomination: true, extraDiscount: true, thumbnailUrl: true, sortOrder: true,
       },
     })
-    res.json({ success: true, data: configs })
+
+    // Nếu user đã đăng nhập, tính thêm % giảm giá VIP (cộng dồn với extraDiscount của gói)
+    // để FE hiển thị giá cuối cùng chính xác trước khi bấm nạp.
+    let vipDiscountPercent = 0
+    let vipTierName = null
+    if (req.user?.id) {
+      const { phoneTopupPercent, tier } = await getUserVipDiscounts(req.user.id)
+      vipDiscountPercent = phoneTopupPercent || 0
+      vipTierName = vipDiscountPercent > 0 ? (tier?.name || null) : null
+    }
+
+    const data = configs.map(c => {
+      const denom = parseFloat(c.denomination)
+      const totalDiscountPercent = Math.min(100, parseFloat(c.extraDiscount || 0) + vipDiscountPercent)
+      return {
+        ...c,
+        vipDiscountPercent,
+        vipTierName,
+        vipPrice: Math.max(0, Math.round(denom * (1 - totalDiscountPercent / 100))),
+      }
+    })
+
+    res.json({ success: true, data })
   } catch (e) {
     res.status(500).json({ success: false, message: e.message })
   }
@@ -389,8 +412,9 @@ const createTopupOrder = async (req, res) => {
     }
 
     const denom = parseFloat(config.denomination)
-    const discountRate = parseFloat(config.extraDiscount) / 100
-    const price = Math.max(0, Math.round(denom * (1 - discountRate)))
+    const { phoneTopupPercent, tier: vipTier } = await getUserVipDiscounts(req.user.id)
+    const totalDiscountPercent = Math.min(100, parseFloat(config.extraDiscount || 0) + (phoneTopupPercent || 0))
+    const price = Math.max(0, Math.round(denom * (1 - totalDiscountPercent / 100)))
 
     // Chống spam: quá nhiều đơn PENDING cùng SĐT trong thời gian ngắn
     const recentPending = await prisma.phoneTopupOrder.count({
@@ -436,7 +460,8 @@ const createTopupOrder = async (req, res) => {
           amount: -price,
           balanceBefore: user.balance,
           balanceAfter: updated.balance,
-          description: `Nạp tiền điện thoại ${config.telcoLabel || config.telco} ${denom.toLocaleString('vi-VN')}đ cho ${phoneClean}`,
+          description: `Nạp tiền điện thoại ${config.telcoLabel || config.telco} ${denom.toLocaleString('vi-VN')}đ cho ${phoneClean}` +
+            (phoneTopupPercent > 0 ? ` (VIP ${vipTier?.name || ''} -${phoneTopupPercent}%)` : ''),
           referenceId: o.id,
         },
       })
@@ -444,6 +469,9 @@ const createTopupOrder = async (req, res) => {
       emitToUser(req.user.id, 'balance:update', { balance: updated.balance })
       return o
     })
+
+    // Cập nhật VIP sau khi nạp (totalSpent vừa tăng)
+    recalculateVip(req.user.id).catch(err => console.error('recalculateVip after phone topup:', err))
 
     let apiRes
     try {

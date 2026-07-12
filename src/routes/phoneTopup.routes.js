@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const ctrl = require('../controllers/phoneTopup.controller')
-const { protect, adminOnly } = require('../middleware/authMiddleware')
+const { protect, adminOnly, optionalAuth } = require('../middleware/authMiddleware')
 const { uploadCardThumbnail } = require('../config/cloudinary') // dùng lại uploader ảnh sẵn có
 
 // ── Admin ────────────────────────────────────────────────────────────────
@@ -13,7 +13,7 @@ router.get('/admin/orders',          protect, adminOnly, ctrl.adminGetOrders)
 router.put('/admin/orders/:id/resolve', protect, adminOnly, ctrl.adminResolveOrder)
 
 // ── Public / User ────────────────────────────────────────────────────────
-router.get('/configs',           ctrl.getPublicConfigs)
+router.get('/configs',           optionalAuth, ctrl.getPublicConfigs)
 router.post('/order',            protect, ctrl.createTopupOrder)
 router.get('/order/:id/check',   protect, ctrl.checkOrderStatus)
 router.get('/my-orders',         protect, ctrl.getMyOrders)

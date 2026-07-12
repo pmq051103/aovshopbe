@@ -256,13 +256,14 @@ const getUserVipDiscounts = async (userId) => {
       include: { tier: true },
     });
     if (!membership || !membership.tier || !membership.tier.isActive) {
-      return { accPercent: 0, boxPercent: 0, cardPercent: 0, tier: null };
+      return { accPercent: 0, boxPercent: 0, cardPercent: 0, wheelPercent: 0, phoneTopupPercent: 0, tier: null };
     }
     return {
       accPercent: parseFloat(membership.tier.discountPercent || 0),
       boxPercent: parseFloat(membership.tier.discountBoxPercent || 0),
       cardPercent: parseFloat(membership.tier.discountCardPercent || 0),
       wheelPercent: parseFloat(membership.tier.discountWheelPercent || 0),
+      phoneTopupPercent: parseFloat(membership.tier.discountPhoneTopupPercent || 0),
       tier: membership.tier,
     };
   } catch (err) {
@@ -272,6 +273,7 @@ const getUserVipDiscounts = async (userId) => {
       boxPercent: 0,
       cardPercent: 0,
       wheelPercent: 0,
+      phoneTopupPercent: 0,
       tier: null,
     };
   }
@@ -311,6 +313,7 @@ const adminCreateTier = async (req, res) => {
       discountBoxPercent,
       discountCardPercent,
       discountWheelPercent,
+      discountPhoneTopupPercent,
       bonusQuanHuy,
       spinBonus,
       color,
@@ -325,6 +328,7 @@ const adminCreateTier = async (req, res) => {
         discountBoxPercent: clampPercent(discountBoxPercent),
         discountCardPercent: clampPercent(discountCardPercent),
         discountWheelPercent: clampPercent(discountWheelPercent),
+        discountPhoneTopupPercent: clampPercent(discountPhoneTopupPercent),
         bonusQuanHuy: parseInt(bonusQuanHuy || 0),
         spinBonus: parseInt(spinBonus || 0),
         color,
@@ -345,7 +349,7 @@ const adminUpdateTier = async (req, res) => {
   try {
     const data = { ...req.body };
     // Giới hạn lại các field % nếu có mặt trong request, tránh vượt 0–100
-    ["discountPercent", "discountBoxPercent", "discountCardPercent", "discountWheelPercent"].forEach(
+    ["discountPercent", "discountBoxPercent", "discountCardPercent", "discountWheelPercent", "discountPhoneTopupPercent"].forEach(
       (field) => {
         if (data[field] !== undefined) data[field] = clampPercent(data[field]);
       },

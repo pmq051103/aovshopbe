@@ -1275,6 +1275,7 @@ model VipTier {
   discountBoxPercent  Decimal   @default(0.00) @db.Decimal(5, 2) // giảm giá khi mua túi mù
   discountCardPercent Decimal   @default(0.00) @db.Decimal(5, 2) // giảm giá khi mua thẻ cào
   discountWheelPercent Decimal  @default(0.00) @db.Decimal(5, 2) // giảm giá chi phí quay vòng quay
+  discountPhoneTopupPercent Decimal @default(0.00) @db.Decimal(5, 2) // giảm giá khi nạp tiền điện thoại trực tiếp
   bonusQuanHuy    Int           @default(0)         // bonus QuanHuy mỗi lần nạp
   spinBonus       Int           @default(0)         // lượt quay thêm mỗi tháng
   color           String        @default("#ffffff") @db.VarChar(20)

@@ -75,11 +75,19 @@ const spin = async (req, res) => {
       });
     }
 
-    if (parseFloat(user.balance) < parseFloat(wheel.spinCost)) {
+    // Áp dụng giảm giá VIP (nếu có) cho chi phí quay — cùng công thức với getWheel
+    // để giá hiển thị và giá thực trừ luôn khớp nhau.
+    let actualSpinCost = parseFloat(wheel.spinCost);
+    const { wheelPercent } = await getUserVipDiscounts(req.user.id);
+    if (wheelPercent > 0) {
+      actualSpinCost = Math.max(0, Math.round(parseFloat(wheel.spinCost) * (1 - wheelPercent / 100)));
+    }
+
+    if (parseFloat(user.balance) < actualSpinCost) {
       return res.status(400).json({
         success: false,
         message: 'Số dư không đủ',
-        required: wheel.spinCost
+        required: actualSpinCost
       });
     }
 
@@ -100,8 +108,8 @@ const spin = async (req, res) => {
       let updatedUser = await tx.user.update({
         where: { id: req.user.id },
         data: {
-          balance: { decrement: wheel.spinCost },
-          totalSpent: { increment: wheel.spinCost }
+          balance: { decrement: actualSpinCost },
+          totalSpent: { increment: actualSpinCost }
         }
       });
 
@@ -215,7 +223,7 @@ const spin = async (req, res) => {
           userId: req.user.id,
           wheelId: wheel.id,
           rewardId: selectedReward.id,
-          spinCost: wheel.spinCost,
+          spinCost: actualSpinCost,
           rewardValue,
           rewardName: selectedReward.name,
           rarity: selectedReward.rarity
@@ -226,7 +234,7 @@ const spin = async (req, res) => {
         data: {
           userId: req.user.id,
           type: 'SPIN',
-          amount: parseFloat(rewardValue) - parseFloat(wheel.spinCost),
+          amount: parseFloat(rewardValue) - actualSpinCost,
           balanceBefore: user.balance,
           balanceAfter: updatedUser.balance,
           description: `Vòng quay → ${selectedReward.name}`,

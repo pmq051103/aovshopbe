@@ -1,11 +1,11 @@
 const express = require('express')
 const router = express.Router()
 const ctrl = require('../controllers/wheel.controller')
-const { protect, adminOnly } = require('../middleware/authMiddleware')
+const { protect, adminOnly, optionalAuth } = require('../middleware/authMiddleware')
 const rateLimiter = require('../middleware/rateLimiter')
 const { uploadBanner } = require('../config/cloudinary')
 
-router.get('/', ctrl.getWheel)
+router.get('/', optionalAuth, ctrl.getWheel)
 router.get('/winners', ctrl.getRecentWinners)
 router.post('/spin', protect, rateLimiter.spin, ctrl.spin)
 router.get('/history', protect, ctrl.getHistory)
