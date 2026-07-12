@@ -1,13 +1,17 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const logger = require('./logger');
+const { isOriginAllowed } = require('./allowedOrigins');
 
 let io;
 
 const initSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+      origin: (origin, callback) => {
+        if (isOriginAllowed(origin)) return callback(null, true)
+        callback(new Error('Not allowed by CORS: ' + origin))
+      },
       credentials: true,
     },
     pingTimeout: 60000,

@@ -44,6 +44,8 @@ const achievementRoutes = require('./routes/achievement.routes')
 const auctionRoutes = require('./routes/auction.routes')
 const marketplaceRoutes = require('./routes/marketplace.routes')
 
+const { isOriginAllowed } = require('./config/allowedOrigins')
+
 const app = express()
 const server = http.createServer(app)
 const io = initSocket(server)
@@ -51,7 +53,15 @@ app.set('trust proxy', 1)
 app.set('io', io)
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true, methods: ['GET','POST','PUT','DELETE','PATCH'], allowedHeaders: ['Content-Type','Authorization','x-refresh-token'] }))
+app.use(cors({
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) return callback(null, true)
+    callback(new Error('Not allowed by CORS: ' + origin))
+  },
+  credentials: true,
+  methods: ['GET','POST','PUT','DELETE','PATCH'],
+  allowedHeaders: ['Content-Type','Authorization','x-refresh-token'],
+}))
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 app.use(compression())
