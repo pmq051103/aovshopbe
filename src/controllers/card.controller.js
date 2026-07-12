@@ -1788,9 +1788,11 @@ const adminResendPurchase = async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════
 // ADMIN — Kiểm tra 1 seri thẻ cào đã được sử dụng hay chưa (trước khi duyệt
 // nạp thủ công cho khách, tránh trường hợp khách gửi thẻ đã dùng để gian lận).
-// GET http://.../api/checkcard?telco=...&serial=...&partner_id=...&sign=...
-// sign = md5(partner_key + serial) — LƯU Ý: khác các API khác, KHÔNG có partner_id
-// trong chuỗi ký, chỉ ghép partner_key với serial.
+// POST http://.../api/checkcard?telco=...&serial=...&partner_id=...&sign=...
+// LƯU Ý: dù là method POST nhưng tham số vẫn nằm trên query string (không phải JSON body).
+// sign = md5(partner_key + serial) — khác các API khác, KHÔNG có partner_id trong chuỗi ký,
+// chỉ ghép partner_key với serial.
+// Response: { status: "success", data: { status: "checked", serial, card_status: "unavailable"|..., value, date_used, acc_charged } }
 // ══════════════════════════════════════════════════════════════════════════
 const adminCheckCardSerial = async (req, res) => {
   try {
@@ -1805,7 +1807,7 @@ const adminCheckCardSerial = async (req, res) => {
     const serialClean = String(serial).trim().replace(/[\s-]/g, '')
     const sign = md5(CARD_CHECK_PARTNER_KEY, serialClean)
 
-    const { data: apiRes } = await axios.get(CARD_CHECK_URL, {
+    const { data: apiRes } = await axios.post(CARD_CHECK_URL, null, {
       params: { telco, serial: serialClean, partner_id: CARD_CHECK_PARTNER_ID, sign },
       timeout: 15000,
     })
