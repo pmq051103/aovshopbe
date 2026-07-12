@@ -336,12 +336,13 @@ const sendResetPasswordEmail = async ({ user, resetUrl }) => {
 }
 
 
-const notifyUserCardPurchase = async ({ user, cards, telco, denomination, quantity, totalPrice }) => {
+const notifyUserCardPurchase = async ({ user, cards, telco, denomination, quantity, totalPrice, purchaseId }) => {
   const logo = await getSiteLogo()
 
   const cardBlocks = (cards || []).map((c, i) => {
-    const code = c.code || c.serial
-    const seri = c.seri || c.serial_number
+    // Đối tác có thể đặt tên field khác nhau tuỳ API — thử lần lượt các tên phổ biến.
+    const code = c.code || c.pin || c.card_code || c.cardCode
+    const seri = c.serial || c.seri || c.serial_number || c.card_serial || c.cardSerial
     return `
     <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:12px;border:1px solid #e7eaf2;border-radius:12px;overflow:hidden;">
       <tr><td style="background:#f6f3ff;padding:8px 16px;font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#7c3aed;">Thẻ ${i + 1}</td></tr>
@@ -372,6 +373,7 @@ const notifyUserCardPurchase = async ({ user, cards, telco, denomination, quanti
     })}
 
     ${infoCard([
+      ...(purchaseId ? [{ label: 'Mã giao dịch', value: purchaseId, color: '#1a2233' }] : []),
       { label: 'Loại thẻ', value: telco, color: '#7c3aed' },
       { label: 'Mệnh giá', value: formatMoney(denomination), color: '#ec2f75' },
       { label: 'Số lượng', value: quantity + ' thẻ' },
@@ -398,7 +400,7 @@ const notifyUserCardPurchase = async ({ user, cards, telco, denomination, quanti
     to: user.email,
     subject: `[AOV Shop] Mua thẻ thành công — ${quantity} thẻ ${telco} ${formatMoney(denomination)}`,
     html,
-    text: `Mua thẻ thành công! ${quantity} thẻ ${telco} ${formatMoney(denomination)}. Mã thẻ: ${(cards || []).map(c => c.code || c.serial).join(', ')}`,
+    text: `Mua thẻ thành công! Mã giao dịch: ${purchaseId || ''}. ${quantity} thẻ ${telco} ${formatMoney(denomination)}. Mã thẻ: ${(cards || []).map(c => c.code || c.pin || c.card_code).join(', ')}. Serial: ${(cards || []).map(c => c.serial || c.seri || c.serial_number).filter(Boolean).join(', ')}`,
   })
 }
 

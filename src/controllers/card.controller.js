@@ -1388,6 +1388,10 @@ const buyCard = async (req, res) => {
     if (apiStatus === 1) {
       const cards = normalizeBuyCards(apiRes)
 
+      // ✅ Mốc quan trọng nhất: thẻ đã mua thành công thật sự, đã lưu DB.
+      // Từ đây trở xuống chỉ là các việc "phụ" (thông báo, email, hoa hồng CTV) —
+      // TUYỆT ĐỐI không được để lỗi ở các bước phụ này làm gãy response trả về
+      // FE, kẻo báo nhầm "thất bại" trong khi thẻ đã mua thành công.
       await prisma.cardPurchase.update({
         where: { id: purchase.id },
         data: {
@@ -1398,38 +1402,57 @@ const buyCard = async (req, res) => {
         },
       })
 
-      await prisma.notification.create({
-        data: {
-          userId: req.user.id,
-          type: 'PURCHASE',
-          title: 'Mua thẻ thành công',
-          message: `${qty} thẻ ${config.telcoLabel || config.telco} ${denom.toLocaleString('vi-VN')}đ đã sẵn sàng`,
+      try {
+        await prisma.notification.create({
           data: {
-            purchaseId: purchase.id,
+            userId: req.user.id,
+            type: 'PURCHASE',
+            title: 'Mua thẻ thành công',
+            message: `${qty} thẻ ${config.telcoLabel || config.telco} ${denom.toLocaleString('vi-VN')}đ đã sẵn sàng`,
+            data: {
+              purchaseId: purchase.id,
+            },
           },
-        },
-      })
-
-      // Gửi email thông báo mua thẻ thành công
-      const buyer = await prisma.user.findUnique({ where: { id: req.user.id }, select: { email: true, displayName: true, username: true } })
-      if (buyer?.email) {
-        notifyUserCardPurchase({
-          user: buyer,
-          cards: cards || [],
-          telco: config.telcoLabel || config.telco,
-          denomination: denom,
-          quantity: qty,
-          totalPrice,
-        }).catch(e => console.error('[Email card] error:', e.message))
+        })
+      } catch (e) {
+        console.error('[buyCard notification ERROR — không ảnh hưởng kết quả mua thẻ]', e.message)
       }
 
-      const latestUser = await prisma.user.findUnique({
-        where: { id: req.user.id },
-        select: { balance: true },
-      })
+      // Gửi email thông báo mua thẻ thành công
+      try {
+        const buyer = await prisma.user.findUnique({ where: { id: req.user.id }, select: { email: true, displayName: true, username: true } })
+        if (buyer?.email) {
+          notifyUserCardPurchase({
+            user: buyer,
+            cards: cards || [],
+            telco: config.telcoLabel || config.telco,
+            denomination: denom,
+            quantity: qty,
+            totalPrice,
+            purchaseId: purchase.id,
+          }).catch(e => console.error('[Email card] error:', e.message))
+        }
+      } catch (e) {
+        console.error('[buyCard email lookup ERROR — không ảnh hưởng kết quả mua thẻ]', e.message)
+      }
 
       // Ghi nhận hoa hồng CTV nếu người mua được giới thiệu
-      await processReferralPurchase(req.user.id, totalPrice, purchase.id)
+      try {
+        await processReferralPurchase(req.user.id, totalPrice, purchase.id)
+      } catch (e) {
+        console.error('[buyCard processReferralPurchase ERROR — không ảnh hưởng kết quả mua thẻ]', e.message)
+      }
+
+      let latestBalance = null
+      try {
+        const latestUser = await prisma.user.findUnique({
+          where: { id: req.user.id },
+          select: { balance: true },
+        })
+        latestBalance = latestUser?.balance
+      } catch (e) {
+        console.error('[buyCard latestUser lookup ERROR — không ảnh hưởng kết quả mua thẻ]', e.message)
+      }
 
       return res.json({
         success: true,
@@ -1439,7 +1462,7 @@ const buyCard = async (req, res) => {
           status: 'SUCCESS',
           cards,
           totalPrice,
-          newBalance: latestUser?.balance,
+          newBalance: latestBalance,
           telco: config.telco,
           telcoLabel: config.telcoLabel,
           denomination: denom,
@@ -1459,17 +1482,21 @@ const buyCard = async (req, res) => {
         },
       })
 
-      await prisma.notification.create({
-        data: {
-          userId: req.user.id,
-          type: 'PURCHASE',
-          title: 'Đơn mua thẻ đang chờ lấy lại mã',
-          message: viMessage,
+      try {
+        await prisma.notification.create({
           data: {
-            purchaseId: purchase.id,
+            userId: req.user.id,
+            type: 'PURCHASE',
+            title: 'Đơn mua thẻ đang chờ lấy lại mã',
+            message: viMessage,
+            data: {
+              purchaseId: purchase.id,
+            },
           },
-        },
-      })
+        })
+      } catch (e) {
+        console.error('[buyCard pending notification ERROR — không ảnh hưởng kết quả]', e.message)
+      }
 
       return res.json({
         success: true,
