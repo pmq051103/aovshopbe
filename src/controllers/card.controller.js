@@ -36,6 +36,45 @@ const SERVICE_CODE_MAP = {
   VCOIN: 'Vcoin',
   GATE: 'Gate',
 }
+const REVERSE_SERVICE_CODE_MAP = Object.fromEntries(
+  Object.entries(SERVICE_CODE_MAP).map(([code, serviceCode]) => [serviceCode.toLowerCase(), code])
+)
+
+// Lấy danh sách thẻ + mệnh giá THẬT từ đối tác (GET /products) — dùng để admin chọn đúng loại thẻ,
+// tránh trường hợp gõ tay telco/mệnh giá không tồn tại bên đối tác dẫn tới lỗi khi nạp/mua.
+const adminGetCardProducts = async (req, res) => {
+  try {
+    const { data } = await axios.get(`${GT_BUY_URL}/products`, {
+      params: { partner_id: GT_BUY_PARTNER_ID },
+      timeout: 10000,
+    })
+
+    const rawList = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : [])
+
+    const products = rawList.map(p => {
+      const serviceCode = p.service_code || ''
+      const telco = REVERSE_SERVICE_CODE_MAP[serviceCode.toLowerCase()]
+        || serviceCode.toUpperCase().replace(/\s+/g, '_')
+
+      const denominations = (p.cardvalue || [])
+        .map(cv => parseFloat(cv.value ?? cv.denomination ?? cv.face_value ?? cv.price ?? cv.mfaceValue))
+        .filter(v => !isNaN(v) && v > 0)
+        .sort((a, b) => a - b)
+
+      return {
+        telco,
+        serviceCode,
+        telcoLabel: (p.name || serviceCode || '').replace(/^Thẻ\s+/i, '').trim() || serviceCode,
+        image: p.imgurl || p.image || null,
+        denominations,
+      }
+    }).filter(p => p.telco && p.denominations.length > 0)
+
+    res.json({ success: true, data: products })
+  } catch (e) {
+    res.status(502).json({ success: false, message: 'Không lấy được danh sách thẻ từ đối tác: ' + (e.response?.data?.message || e.message) })
+  }
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // ADMIN — Quản lý cấu hình thẻ
@@ -1716,6 +1755,7 @@ const adminResendPurchase = async (req, res) => {
  
 module.exports = {
   adminGetConfigs,
+  adminGetCardProducts,
   adminCreateConfig,
   adminBulkCreateConfig,
   adminUpdateConfig,
