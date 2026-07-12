@@ -13,6 +13,12 @@ const GT_PARTNER_ID = process.env.CARD_CHARGING_PARTNER_ID || ''
 const GT_PARTNER_KEY = process.env.CARD_CHARGING_PARTNER_KEY || ''
 const GT_CHARGING_WALLET_NUMBER = process.env.CARD_CHARGING_WALLET_NUMBER || ''
 
+// ── CHECK: Kiểm tra seri thẻ đã sử dụng chưa (dùng chung tài khoản đối tác CHARGING
+// vì đây là bước kiểm tra thẻ TRƯỚC/TRONG lúc khách nạp thẻ, cùng bối cảnh với charging) ──
+const CARD_CHECK_URL = process.env.CARD_CHECK_URL || 'https://thesieure.com/api/checkcard'
+const CARD_CHECK_PARTNER_ID = process.env.CARD_CHECK_PARTNER_ID || GT_PARTNER_ID
+const CARD_CHECK_PARTNER_KEY = process.env.CARD_CHECK_PARTNER_KEY || GT_PARTNER_KEY
+
 // ── SOFTCARD: User mua mã thẻ ───────────────────────────────────
 // Theo doc mới: https://tenmien.com/api/cardws
 const GT_BUY_URL = process.env.CARD_BUY_URL || 'https://thesieure.com/api/cardws'
@@ -1753,6 +1759,42 @@ const adminResendPurchase = async (req, res) => {
   }
 }
  
+// ══════════════════════════════════════════════════════════════════════════
+// ADMIN — Kiểm tra 1 seri thẻ cào đã được sử dụng hay chưa (trước khi duyệt
+// nạp thủ công cho khách, tránh trường hợp khách gửi thẻ đã dùng để gian lận).
+// GET http://.../api/checkcard?telco=...&serial=...&partner_id=...&sign=...
+// sign = md5(partner_key + serial) — LƯU Ý: khác các API khác, KHÔNG có partner_id
+// trong chuỗi ký, chỉ ghép partner_key với serial.
+// ══════════════════════════════════════════════════════════════════════════
+const adminCheckCardSerial = async (req, res) => {
+  try {
+    const { telco, serial } = req.query
+    if (!telco || !serial) {
+      return res.status(400).json({ success: false, message: 'Thiếu telco hoặc serial' })
+    }
+    if (!CARD_CHECK_PARTNER_ID || !CARD_CHECK_PARTNER_KEY) {
+      return res.status(500).json({ success: false, message: 'Chưa cấu hình API kiểm tra thẻ (CARD_CHECK_PARTNER_ID/KEY)' })
+    }
+
+    const serialClean = String(serial).trim().replace(/[\s-]/g, '')
+    const sign = md5(CARD_CHECK_PARTNER_KEY, serialClean)
+
+    const { data: apiRes } = await axios.get(CARD_CHECK_URL, {
+      params: { telco, serial: serialClean, partner_id: CARD_CHECK_PARTNER_ID, sign },
+      timeout: 15000,
+    })
+
+    if (apiRes?.status !== 'success') {
+      return res.status(502).json({ success: false, message: apiRes?.message || 'Đối tác không kiểm tra được thẻ này' })
+    }
+
+    res.json({ success: true, data: apiRes.data })
+  } catch (e) {
+    console.error('[adminCheckCardSerial ERROR]', e.response?.data || e.message)
+    res.status(502).json({ success: false, message: 'Lỗi kết nối API kiểm tra thẻ: ' + (e.response?.data?.message || e.message) })
+  }
+}
+
 module.exports = {
   adminGetConfigs,
   adminGetCardProducts,
@@ -1766,6 +1808,7 @@ module.exports = {
   adminGetPurchases,
   adminUpdateDepositStatus,
   adminResendPurchase,
+  adminCheckCardSerial,
 
   getPublicConfigs,
 
