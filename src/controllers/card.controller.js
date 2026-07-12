@@ -46,6 +46,32 @@ const REVERSE_SERVICE_CODE_MAP = Object.fromEntries(
   Object.entries(SERVICE_CODE_MAP).map(([code, serviceCode]) => [serviceCode.toLowerCase(), code])
 )
 
+// Lấy số dư ví bên đối tác (API mua thẻ) — hiển thị cho admin biết còn bao nhiêu tiền để mua thẻ cho khách
+const adminGetCardBalance = async (req, res) => {
+  try {
+    if (!GT_BUY_URL || !GT_BUY_PARTNER_ID || !GT_BUY_PARTNER_KEY || !GT_BUY_WALLET_NUMBER) {
+      return res.status(400).json({ success: false, message: 'Chưa cấu hình API mua thẻ hoặc thiếu CARD_BUY_WALLET_NUMBER' })
+    }
+
+    const command = 'getbalance'
+    const sign = md5(GT_BUY_PARTNER_KEY, GT_BUY_PARTNER_ID, command)
+
+    const { data } = await axios.post(GT_BUY_URL, null, {
+      params: {
+        partner_id: GT_BUY_PARTNER_ID,
+        wallet_number: GT_BUY_WALLET_NUMBER,
+        command,
+        sign,
+      },
+      timeout: 10000,
+    })
+
+    res.json({ success: true, data: { balance: data.balance, currencyCode: data.currency_code || 'VND' } })
+  } catch (e) {
+    res.status(502).json({ success: false, message: 'Không lấy được số dư từ đối tác: ' + (e.response?.data?.message || e.message) })
+  }
+}
+
 // Lấy danh sách thẻ + mệnh giá THẬT từ đối tác (GET /products) — dùng để admin chọn đúng loại thẻ,
 // tránh trường hợp gõ tay telco/mệnh giá không tồn tại bên đối tác dẫn tới lỗi khi nạp/mua.
 const adminGetCardProducts = async (req, res) => {
@@ -1798,6 +1824,7 @@ const adminCheckCardSerial = async (req, res) => {
 module.exports = {
   adminGetConfigs,
   adminGetCardProducts,
+  adminGetCardBalance,
   adminCreateConfig,
   adminBulkCreateConfig,
   adminUpdateConfig,
