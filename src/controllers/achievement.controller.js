@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma')
 const { emitToUser } = require('../config/socket')
+const { deleteImage } = require('../config/cloudinary')
 
 // ── Public / User ─────────────────────────────────────────────────────────
 const getAllAchievements = async (req, res) => {
@@ -158,7 +159,9 @@ const adminCreateAchievement = async (req, res) => {
         threshold: parseFloat(threshold),
         rewardQuanHuy: parseInt(rewardQuanHuy || 0),
         rewardBadgeId: rewardBadgeId || null,
-        sortOrder: parseInt(sortOrder || 0)
+        sortOrder: parseInt(sortOrder || 0),
+        imageUrl: req.file?.path || null,
+        imagePublicId: req.file?.filename || null
       }
     })
     res.status(201).json({ success: true, data: achievement })
@@ -174,14 +177,26 @@ const adminUpdateAchievement = async (req, res) => {
     if (data.isActive !== undefined) data.isActive = data.isActive === 'true' || data.isActive === true
     if (data.rewardBadgeId !== undefined) data.rewardBadgeId = data.rewardBadgeId || null
 
+    let oldPublicId = null
+    if (req.file?.path) {
+      const existing = await prisma.achievement.findUnique({ where: { id: req.params.id }, select: { imagePublicId: true } })
+      oldPublicId = existing?.imagePublicId || null
+      data.imageUrl = req.file.path
+      data.imagePublicId = req.file.filename
+    }
+
     const achievement = await prisma.achievement.update({ where: { id: req.params.id }, data })
+    if (oldPublicId) await deleteImage(oldPublicId)
+
     res.json({ success: true, data: achievement })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }
 
 const adminDeleteAchievement = async (req, res) => {
   try {
+    const existing = await prisma.achievement.findUnique({ where: { id: req.params.id }, select: { imagePublicId: true } })
     await prisma.achievement.delete({ where: { id: req.params.id } })
+    if (existing?.imagePublicId) await deleteImage(existing.imagePublicId)
     res.json({ success: true, message: 'Đã xóa thành tựu' })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }

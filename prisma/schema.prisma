@@ -1457,6 +1457,8 @@ model Achievement {
   name           String            @db.VarChar(150)
   description    String?           @db.Text
   icon           String?           @db.VarChar(50)
+  imageUrl       String?           @db.Text          // ảnh minh họa thành tựu (nếu admin upload)
+  imagePublicId  String?           @db.VarChar(255)
   metric         AchievementMetric // chỉ số theo dõi
   threshold      Decimal           @db.Decimal(15, 2) // mốc cần đạt
   rewardQuanHuy  Int               @default(0)
@@ -1465,7 +1467,7 @@ model Achievement {
   sortOrder      Int               @default(0)
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
-  rewardBadge    Badge?            @relation(fields: [rewardBadgeId], references: [id])
+  rewardBadge    Badge?            @relation(fields: [rewardBadgeId], references: [id], onDelete: SetNull)
   users          UserAchievement[]
 
   @@index([metric])

@@ -1,4 +1,5 @@
 const prisma = require('../config/prisma')
+const { deleteImage } = require('../config/cloudinary')
 
 // ── Public ──────────────────────────────────────────────────────────────
 const getAllBadges = async (req, res) => {
@@ -28,7 +29,7 @@ const adminGetBadges = async (req, res) => {
   try {
     const badges = await prisma.badge.findMany({
       orderBy: { sortOrder: 'asc' },
-      include: { _count: { select: { users: true } } }
+      include: { _count: { select: { users: true, achievements: true } } }
     })
     res.json({ success: true, data: badges })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
@@ -57,16 +58,27 @@ const adminUpdateBadge = async (req, res) => {
     const data = { ...req.body }
     if (data.sortOrder !== undefined) data.sortOrder = parseInt(data.sortOrder)
     if (data.isActive !== undefined) data.isActive = data.isActive === 'true' || data.isActive === true
-    if (req.file?.path) { data.imageUrl = req.file.path; data.imagePublicId = req.file.filename }
+
+    let oldPublicId = null
+    if (req.file?.path) {
+      const existing = await prisma.badge.findUnique({ where: { id: req.params.id }, select: { imagePublicId: true } })
+      oldPublicId = existing?.imagePublicId || null
+      data.imageUrl = req.file.path
+      data.imagePublicId = req.file.filename
+    }
 
     const badge = await prisma.badge.update({ where: { id: req.params.id }, data })
+    if (oldPublicId) await deleteImage(oldPublicId)
+
     res.json({ success: true, data: badge })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }
 
 const adminDeleteBadge = async (req, res) => {
   try {
+    const existing = await prisma.badge.findUnique({ where: { id: req.params.id }, select: { imagePublicId: true } })
     await prisma.badge.delete({ where: { id: req.params.id } })
+    if (existing?.imagePublicId) await deleteImage(existing.imagePublicId)
     res.json({ success: true, message: 'Đã xóa huy hiệu' })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }

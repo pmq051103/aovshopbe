@@ -93,4 +93,10 @@ const uploadCardThumbnail = multer({
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-module.exports = { cloudinary, uploadAvatar, uploadAccountImages, uploadBanner, uploadBoxImage, uploadSettings, uploadCardThumbnail, deleteImage };
+const uploadAchievementImage = multer({
+  storage: createStorage('achievements'),
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+module.exports = { cloudinary, uploadAvatar, uploadAccountImages, uploadBanner, uploadBoxImage, uploadSettings, uploadCardThumbnail, uploadAchievementImage, deleteImage };
