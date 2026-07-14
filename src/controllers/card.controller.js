@@ -402,6 +402,41 @@ const adminDeleteConfig = async (req, res) => {
   }
 }
 
+// Xoá NGUYÊN 1 loại thẻ (tất cả mệnh giá của telco đó) trong 1 lần — cho lẹ thay vì
+// phải bấm xoá từng mệnh giá một. Nếu loại thẻ này đã có giao dịch nạp/mua liên kết tới
+// (khoá ngoại cardConfigId) thì DB sẽ chặn xoá — báo lỗi rõ ràng để admin biết, thay vì
+// để lỗi khoá ngoại thô hiện ra.
+const adminDeleteConfigsByTelco = async (req, res) => {
+  try {
+    const { telco } = req.params
+
+    const configs = await prisma.cardConfig.findMany({ where: { telco } })
+    if (configs.length === 0) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy loại thẻ này' })
+    }
+
+    // Thumbnail dùng chung cho cả nhóm telco -> chỉ cần xoá 1 lần
+    const thumbnailPublicId = configs.find(c => c.thumbnailPublicId)?.thumbnailPublicId
+    if (thumbnailPublicId) {
+      await deleteImage(thumbnailPublicId).catch(() => { })
+    }
+
+    await prisma.cardConfig.deleteMany({ where: { telco } })
+
+    res.json({ success: true, message: `Đã xóa ${configs.length} mệnh giá của loại thẻ này` })
+  } catch (e) {
+    // Lỗi khoá ngoại phổ biến nhất: loại thẻ này đã có lịch sử nạp/mua thẻ liên kết tới,
+    // không xoá được vì sẽ làm mất dữ liệu giao dịch cũ của user.
+    if (e.code === 'P2003' || /foreign key/i.test(e.message)) {
+      return res.status(409).json({
+        success: false,
+        message: 'Không thể xoá — loại thẻ này đã có lịch sử nạp/mua liên quan. Hãy tắt "Cho phép nạp" / "Cho phép mua" ở từng mệnh giá thay vì xoá.',
+      })
+    }
+    res.status(500).json({ success: false, message: e.message })
+  }
+}
+
 const adminDeleteConfigThumbnail = async (req, res) => {
   try {
     const config = await prisma.cardConfig.findUnique({
@@ -1858,6 +1893,7 @@ module.exports = {
   adminBulkCreateConfig,
   adminUpdateConfig,
   adminDeleteConfig,
+  adminDeleteConfigsByTelco,
   adminDeleteConfigThumbnail,
   adminUpdateTelcoThumbnail,
   adminGetDeposits,
