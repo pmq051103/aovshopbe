@@ -16,6 +16,34 @@ const isEmailVerificationRequired = async () => {
   return config?.value === 'true'
 }
 
+// ── Sinh mã mới, lưu DB và gửi email — dùng chung cho register / login / resend ──
+// Tôn trọng cooldown 60s chống spam gửi mail (trừ khi force=true, dùng lúc đăng ký
+// vì đó là lần gửi đầu tiên, chưa có mã cũ nào để giữ).
+const VERIFY_COOLDOWN_MS = 60 * 1000
+const VERIFY_CODE_TTL_MS = 10 * 60 * 1000
+
+const issueVerificationCode = async (user, { force = false } = {}) => {
+  if (!force && user.verifyCodeSentAt && Date.now() - user.verifyCodeSentAt.getTime() < VERIFY_COOLDOWN_MS) {
+    const waitSec = Math.ceil((VERIFY_COOLDOWN_MS - (Date.now() - user.verifyCodeSentAt.getTime())) / 1000)
+    return { sent: false, waitSec }
+  }
+
+  const verifyCode = generateVerifyCode()
+  const verifyCodeExpiry = new Date(Date.now() + VERIFY_CODE_TTL_MS)
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { verifyCode, verifyCodeExpiry, verifyCodeSentAt: new Date() },
+  })
+
+  // Không chặn luồng chính nếu gửi mail lỗi — user vẫn bấm "Gửi lại mã" được
+  sendVerificationCodeEmail({ user, code: verifyCode }).catch(e =>
+    console.error('[Email verify-code] error:', e.message)
+  )
+
+  return { sent: true, waitSec: 0 }
+}
+
 const generateTokens = (userId, role) => {
   const accessToken = jwt.sign({ id: userId, role }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '15m' });
   const refreshToken = jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET, { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' });
@@ -33,8 +61,6 @@ const register = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, parseInt(process.env.BCRYPT_ROUNDS) || 12);
     const verificationRequired = await isEmailVerificationRequired()
-    const verifyCode = verificationRequired ? generateVerifyCode() : null
-    const verifyCodeExpiry = verificationRequired ? new Date(Date.now() + 10 * 60 * 1000) : null // 10 phút
 
     const user = await prisma.user.create({
       data: {
@@ -42,13 +68,10 @@ const register = async (req, res) => {
         displayName: displayName || username,
         avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`,
         verifyToken: uuidv4(),
-        verifyCode,
-        verifyCodeExpiry,
-        verifyCodeSentAt: verificationRequired ? new Date() : null,
         // Admin không bật yêu cầu xác thực -> coi như đã xác thực ngay, khỏi chặn/nhắc user
         emailVerified: !verificationRequired,
       },
-      select: { id: true, username: true, email: true, displayName: true, avatar: true, role: true, balance: true, emailVerified: true }
+      select: { id: true, username: true, email: true, displayName: true, avatar: true, role: true, balance: true, emailVerified: true, verifyCodeSentAt: true }
     });
 
     // Ghi nhận giới thiệu (CTV) nếu đăng ký bằng link giới thiệu — không chặn đăng ký nếu refCode lỗi
@@ -60,12 +83,9 @@ const register = async (req, res) => {
     await prisma.user.update({ where: { id: user.id }, data: { refreshToken } });
 
     // Gửi email mã xác thực — chỉ khi admin đã bật tính năng này trong Cài đặt.
-    // TUYỆT ĐỐI không được để lỗi gửi mail làm gãy response đăng ký, vì tài khoản
-    // đã tạo thành công thật sự. Nếu gửi lỗi, người dùng vẫn có thể bấm "Gửi lại mã".
+    // force:true vì đây là lần gửi đầu tiên, chưa có mã cũ nào để giữ cooldown.
     if (verificationRequired) {
-      sendVerificationCodeEmail({ user, code: verifyCode }).catch(e =>
-        console.error('[Email verify-code] error:', e.message)
-      )
+      await issueVerificationCode(user, { force: true })
     }
 
     res.status(201).json({
@@ -88,12 +108,21 @@ const login = async (req, res) => {
     }
     if (user.isBanned) return res.status(403).json({ success: false, message: `Tài khoản bị khóa: ${user.banReason}` });
     if (!user.isActive) return res.status(401).json({ success: false, message: 'Tài khoản không hoạt động' });
- 
+
     const { accessToken, refreshToken } = generateTokens(user.id, user.role);
     await prisma.user.update({ where: { id: user.id }, data: { refreshToken, lastLogin: new Date(), loginCount: { increment: 1 } } });
- 
-    const userData = { id: user.id, username: user.username, email: user.email, displayName: user.displayName, avatar: user.avatar, role: user.role, balance: user.balance, quanHuyBalance: user.quanHuyBalance, createdAt: user.createdAt, totalDeposit: user.totalDeposit, totalSpent: user.totalSpent };
-    res.json({ success: true, message: 'Đăng nhập thành công', data: { user: userData, accessToken, refreshToken } });
+
+    // Tài khoản chưa xác thực email (do admin đang bật yêu cầu này) -> vẫn cho đăng nhập
+    // (để FE có sẵn thông tin user/token gọi API verify-email) nhưng tự gửi mã mới, tôn
+    // trọng cooldown 60s để tránh spam nếu user cứ đăng nhập đi đăng nhập lại.
+    let needsVerification = false
+    if (!user.emailVerified) {
+      needsVerification = true
+      await issueVerificationCode(user)
+    }
+
+    const userData = { id: user.id, username: user.username, email: user.email, displayName: user.displayName, avatar: user.avatar, role: user.role, balance: user.balance, quanHuyBalance: user.quanHuyBalance, createdAt: user.createdAt, totalDeposit: user.totalDeposit, totalSpent: user.totalSpent, emailVerified: user.emailVerified };
+    res.json({ success: true, message: 'Đăng nhập thành công', data: { user: userData, accessToken, refreshToken, needsVerification } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi đăng nhập' });
   }
@@ -266,17 +295,9 @@ const resendVerificationCode = async (req, res) => {
       return res.status(429).json({ success: false, message: `Vui lòng đợi ${waitSec}s trước khi gửi lại mã` });
     }
 
-    const verifyCode = generateVerifyCode();
-    const verifyCodeExpiry = new Date(Date.now() + 10 * 60 * 1000);
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { verifyCode, verifyCodeExpiry, verifyCodeSentAt: new Date() },
-    });
-
-    const sent = await sendVerificationCodeEmail({ user, code: verifyCode });
+    const { sent, waitSec } = await issueVerificationCode(user)
     if (!sent) {
-      return res.status(500).json({ success: false, message: 'Không gửi được email xác thực' });
+      return res.status(429).json({ success: false, message: `Vui lòng đợi ${waitSec}s trước khi gửi lại mã` });
     }
 
     res.json({ success: true, message: 'Đã gửi lại mã xác thực' });
