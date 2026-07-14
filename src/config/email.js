@@ -336,6 +336,44 @@ const sendResetPasswordEmail = async ({ user, resetUrl }) => {
 }
 
 
+const sendVerificationCodeEmail = async ({ user, code }) => {
+  const logo = await getSiteLogo()
+
+  const content = `
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:24px;">
+      <tr><td align="center">
+        <h2 style="margin:0 0 8px;font-size:22px;font-weight:900;color:#1a2233;">Xác thực địa chỉ email</h2>
+        <p style="margin:0;font-size:14px;line-height:1.7;color:#6b7689;">Xin chào <b>${user.displayName || user.username}</b>, dùng mã bên dưới để hoàn tất xác thực tài khoản AOV Shop.</p>
+      </td></tr>
+    </table>
+
+    ${heroBlock({
+      label: 'Mã xác thực',
+      value: code.split('').join(' '),
+      sub: 'Mã có hiệu lực trong 10 phút',
+      color: '#7c3aed',
+    })}
+
+    ${noticeBox('Không chia sẻ mã này cho bất kỳ ai, kể cả nhân viên AOV Shop. Nếu bạn không yêu cầu xác thực, hãy bỏ qua email này.', 'warn')}
+  `
+
+  const html = baseEmail({
+    logo,
+    title: 'XÁC THỰC EMAIL',
+    subtitle: 'Nhập mã xác thực để kích hoạt tài khoản của bạn.',
+    badge: 'BẢO MẬT TÀI KHOẢN',
+    content,
+    footerText: 'Email bảo mật từ AOV Shop',
+  })
+
+  return sendMail({
+    to: user.email,
+    subject: `[AOV Shop] Mã xác thực email của bạn: ${code}`,
+    html,
+    text: `Mã xác thực tài khoản AOV Shop của bạn là: ${code}. Mã có hiệu lực trong 10 phút. Không chia sẻ mã này cho bất kỳ ai.`,
+  })
+}
+
 const notifyUserCardPurchase = async ({ user, cards, telco, denomination, quantity, totalPrice, purchaseId }) => {
   const logo = await getSiteLogo()
 
@@ -538,4 +576,5 @@ module.exports = {
   notifyUserTopupCompleted,
   sendResetPasswordEmail,
   notifyUserCardPurchase,
+  sendVerificationCodeEmail,
 }

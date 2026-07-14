@@ -10,6 +10,8 @@ const {
   getMe,
   forgotPassword,
   resetPassword,
+  verifyEmail,
+  resendVerificationCode,
 } = require('../controllers/auth.controller');
 
 const { googleLogin } = require('../controllers/googleAuth.controller');
@@ -25,5 +27,7 @@ router.get('/me', protect, getMe);
 router.post('/forgot-password', rateLimiter.auth, forgotPassword);
 router.post('/reset-password', resetPassword);
 router.post('/google', rateLimiter.auth, googleLogin);
+router.post('/verify-email', rateLimiter.auth, verifyEmail);
+router.post('/resend-verification-code', rateLimiter.auth, resendVerificationCode);
 
 module.exports = router;

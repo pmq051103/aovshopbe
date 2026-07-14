@@ -24,6 +24,9 @@ model User {
   banReason           String?              @db.Text
   emailVerified       Boolean              @default(false)
   verifyToken         String?              @db.VarChar(255)
+  verifyCode          String?              @db.VarChar(6)
+  verifyCodeExpiry    DateTime?
+  verifyCodeSentAt    DateTime?
   resetToken          String?              @db.VarChar(255)
   resetTokenExpiry    DateTime?
   refreshToken        String?              @db.Text
