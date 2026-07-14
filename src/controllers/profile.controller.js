@@ -2,7 +2,7 @@ const prisma = require('../config/prisma')
 
 // Tổng hợp toàn bộ dữ liệu hiển thị trên trang Hồ sơ:
 // avatar/VIP đã có sẵn trong user object (auth store), endpoint này bổ sung phần còn thiếu:
-// badges, thành tựu, và các số liệu thống kê (tổng giao dịch, tổng nạp, tổng acc mua,
+// badges, và các số liệu thống kê (tổng giao dịch, tổng nạp, tổng acc mua,
 // tỷ lệ mở túi mù, lượt quay).
 const getProfileOverview = async (req, res) => {
   try {
@@ -12,7 +12,6 @@ const getProfileOverview = async (req, res) => {
       user,
       vipMembership,
       badges,
-      achievementsRaw,
       totalTransactions,
       totalOwnedAccounts,
       wheelSpinCount,
@@ -31,7 +30,6 @@ const getProfileOverview = async (req, res) => {
       }),
       prisma.vipMembership.findUnique({ where: { userId }, include: { tier: true } }),
       prisma.userBadge.findMany({ where: { userId }, include: { badge: true }, orderBy: { awardedAt: 'desc' } }),
-      prisma.userAchievement.findMany({ where: { userId }, include: { achievement: true }, orderBy: { achievedAt: 'desc' } }),
       prisma.transaction.count({ where: { userId } }),
       prisma.userOwnedAccount.count({ where: { userId } }),
       prisma.wheelHistory.count({ where: { userId } }),
@@ -56,7 +54,6 @@ const getProfileOverview = async (req, res) => {
           achievedAt: vipMembership.achievedAt,
         } : null,
         badges: badges.map(b => ({ id: b.badge.id, name: b.badge.name, icon: b.badge.icon, imageUrl: b.badge.imageUrl, color: b.badge.color, awardedAt: b.awardedAt })),
-        achievements: achievementsRaw.map(a => ({ id: a.achievement.id, name: a.achievement.name, icon: a.achievement.icon, achievedAt: a.achievedAt })),
         stats: {
           totalTransactions,
           totalDeposit: parseFloat(user.totalDeposit),

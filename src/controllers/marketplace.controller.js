@@ -1,6 +1,5 @@
 const prisma = require('../config/prisma')
 const { emitToUser, emitToAdmins } = require('../config/socket')
-const { checkAndGrantAchievements } = require('./achievement.controller')
 
 const DEFAULT_FEE_PERCENT = 10
 const DEFAULT_CONTACT_ZALO = 'Liên hệ Zalo Admin để đặt cọc và nâng cấp quyền bán acc'
@@ -430,7 +429,6 @@ const buyListing = async (req, res) => {
     emitToUser(buyerId, 'balance:update', {})
     emitToUser(result.sellerId, 'balance:update', {})
     emitToUser(result.sellerId, 'notification', { type: 'MARKETPLACE', title: 'Đã bán thành công!' })
-    checkAndGrantAchievements(result.sellerId)
 
     res.json({ success: true, data: result.listing, message: 'Mua tài khoản thành công' })
   } catch (e) {

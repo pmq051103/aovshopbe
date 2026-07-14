@@ -59,7 +59,7 @@ model User {
   installmentReqs   InstallmentRequest[]
   referredBy        AffiliateReferral?   @relation("ReferredUser")
 
-  // ── Badges / Achievements / Auction / Marketplace (NEW) ──────────────────
+  // ── Badges / Auction / Marketplace (NEW) ──────────────────
   // ── Cấp phép bán acc trên Chợ Trao Đổi ────────────────────────────────────
   sellerTier          SellerTier @default(NONE)
   sellerTierNote      String?    @db.VarChar(255) // ghi chú admin (vd: "đã cọc 2tr, nâng TIER_FULL")
@@ -69,7 +69,6 @@ model User {
   sellerTierUpdatedBy String?
 
   badges              UserBadge[]
-  achievements        UserAchievement[]
   auctionBids         AuctionBid[]
   auctionRoomsWon     AuctionRoom[]        @relation("AuctionWinner")
   marketplaceListings MarketplaceListing[] @relation("MarketplaceSeller")
@@ -1414,7 +1413,7 @@ enum InstallmentRequestStatus {
 }
 
 // ══════════════════════════════════════════════
-// BADGES & ACHIEVEMENTS (Hồ sơ người dùng)
+// BADGES (Hồ sơ người dùng)
 // ══════════════════════════════════════════════
 
 // Danh mục huy hiệu do admin tạo (thuần cosmetic, gắn vào UserBadge)
@@ -1431,7 +1430,6 @@ model Badge {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   users       UserBadge[]
-  achievements Achievement[]
 
   @@map("badges")
 }
@@ -1448,53 +1446,6 @@ model UserBadge {
   @@unique([userId, badgeId])
   @@index([userId])
   @@map("user_badges")
-}
-
-// Thành tựu — đạt mốc (ngưỡng) 1 chỉ số nào đó của user thì tự động được cấp,
-// có thể kèm badge thưởng + quân huy thưởng.
-model Achievement {
-  id             String            @id @default(uuid())
-  name           String            @db.VarChar(150)
-  description    String?           @db.Text
-  icon           String?           @db.VarChar(50)
-  imageUrl       String?           @db.Text          // ảnh minh họa thành tựu (nếu admin upload)
-  imagePublicId  String?           @db.VarChar(255)
-  metric         AchievementMetric // chỉ số theo dõi
-  threshold      Decimal           @db.Decimal(15, 2) // mốc cần đạt
-  rewardQuanHuy  Int               @default(0)
-  rewardBadgeId  String?
-  isActive       Boolean           @default(true)
-  sortOrder      Int               @default(0)
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  rewardBadge    Badge?            @relation(fields: [rewardBadgeId], references: [id], onDelete: SetNull)
-  users          UserAchievement[]
-
-  @@index([metric])
-  @@map("achievements")
-}
-
-model UserAchievement {
-  id            String      @id @default(uuid())
-  userId        String
-  achievementId String
-  achievedAt    DateTime    @default(now())
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, achievementId])
-  @@index([userId])
-  @@map("user_achievements")
-}
-
-enum AchievementMetric {
-  TOTAL_DEPOSIT      // tổng nạp (VNĐ)
-  TOTAL_SPENT         // tổng chi tiêu (VNĐ)
-  ACCOUNTS_OWNED      // số acc đã sở hữu (mua + túi mù + quay + đấu giá + marketplace)
-  WHEEL_SPINS         // số lượt quay vòng quay đã thực hiện
-  MYSTERY_BOX_OPENED  // số túi mù đã mở
-  AUCTION_WINS        // số phiên đấu giá đã thắng
-  MARKETPLACE_SALES   // số acc đã bán thành công trên chợ trao đổi
 }
 
 // ══════════════════════════════════════════════

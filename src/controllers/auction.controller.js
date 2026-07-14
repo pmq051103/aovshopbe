@@ -1,6 +1,5 @@
 const prisma = require('../config/prisma')
 const { emitToUser, emitToAll, emitToAdmins, getIO } = require('../config/socket')
-const { checkAndGrantAchievements } = require('./achievement.controller')
 
 const ROOM_INCLUDE_PUBLIC = {
   gameAccount: {
@@ -111,6 +110,7 @@ const placeBid = async (req, res) => {
       }
 
       // Hoàn tiền người giữ giá cao nhất trước đó (nếu có)
+      let outbidInfo = null
       if (room.currentBidderId) {
         const prevBid = await tx.auctionBid.findFirst({
           where: { roomId: id, userId: room.currentBidderId, isRefunded: false },
@@ -134,8 +134,9 @@ const placeBid = async (req, res) => {
               referenceId: room.id
             }
           })
-          emitToUser(room.currentBidderId, 'balance:update', {})
-          emitToUser(room.currentBidderId, 'auction:outbid', { roomId: room.id, title: room.title })
+          // Không emit ở đây — transaction chưa commit, client fetch lại sẽ đọc số dư CŨ.
+          // Lưu lại để emit sau khi transaction đã commit xong (xem bên dưới).
+          outbidInfo = { userId: room.currentBidderId, title: room.title }
         }
       }
 
@@ -170,8 +171,14 @@ const placeBid = async (req, res) => {
         }
       })
 
-      return { bid, room: updatedRoom }
+      return { bid, room: updatedRoom, outbidInfo }
     })
+
+    // ── Emit SAU KHI transaction đã commit xong, để client fetch lại đọc đúng số dư mới ──
+    if (result.outbidInfo) {
+      emitToUser(result.outbidInfo.userId, 'balance:update', {})
+      emitToUser(result.outbidInfo.userId, 'auction:outbid', { roomId: id, title: result.outbidInfo.title })
+    }
 
     emitToUser(userId, 'balance:update', {})
 
@@ -419,7 +426,6 @@ const closeExpiredRooms = async () => {
 
             emitToUser(room.currentBidderId, 'balance:update', {})
             emitToUser(room.currentBidderId, 'notification', { type: 'AUCTION', title: 'Bạn đã thắng đấu giá!', message: room.title })
-            checkAndGrantAchievements(room.currentBidderId)
           } else {
             // Không ai bid — trả acc về trạng thái AVAILABLE, đóng phòng
             if (room.gameAccountId) {

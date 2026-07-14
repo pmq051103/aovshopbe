@@ -29,7 +29,7 @@ const adminGetBadges = async (req, res) => {
   try {
     const badges = await prisma.badge.findMany({
       orderBy: { sortOrder: 'asc' },
-      include: { _count: { select: { users: true, achievements: true } } }
+      include: { _count: { select: { users: true } } }
     })
     res.json({ success: true, data: badges })
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
@@ -83,7 +83,7 @@ const adminDeleteBadge = async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }) }
 }
 
-// Admin tự tay tặng / thu hồi badge cho 1 user (không qua thành tựu tự động)
+// Admin tự tay tặng / thu hồi badge cho 1 user
 const adminGrantBadge = async (req, res) => {
   try {
     const { userId, badgeId, note } = req.body
