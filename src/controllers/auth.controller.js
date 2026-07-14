@@ -112,13 +112,18 @@ const login = async (req, res) => {
     const { accessToken, refreshToken } = generateTokens(user.id, user.role);
     await prisma.user.update({ where: { id: user.id }, data: { refreshToken, lastLogin: new Date(), loginCount: { increment: 1 } } });
 
-    // Tài khoản chưa xác thực email (do admin đang bật yêu cầu này) -> vẫn cho đăng nhập
-    // (để FE có sẵn thông tin user/token gọi API verify-email) nhưng tự gửi mã mới, tôn
-    // trọng cooldown 60s để tránh spam nếu user cứ đăng nhập đi đăng nhập lại.
+    // Chỉ bắt xác thực khi ĐỒNG THỜI: (1) admin đang bật yêu cầu này trong Cài đặt
+    // VÀ (2) tài khoản chưa verify. Nếu admin đã TẮT tính năng sau khi user đăng ký lúc
+    // còn bật (nên emailVerified=false), user vẫn đăng nhập bình thường, không bị chặn.
+    // Vẫn cho đăng nhập trong lúc cần xác thực (để FE có sẵn user/token gọi API
+    // verify-email) nhưng tự gửi mã mới, tôn trọng cooldown 60s chống spam.
     let needsVerification = false
     if (!user.emailVerified) {
-      needsVerification = true
-      await issueVerificationCode(user)
+      const verificationRequired = await isEmailVerificationRequired()
+      if (verificationRequired) {
+        needsVerification = true
+        await issueVerificationCode(user)
+      }
     }
 
     const userData = { id: user.id, username: user.username, email: user.email, displayName: user.displayName, avatar: user.avatar, role: user.role, balance: user.balance, quanHuyBalance: user.quanHuyBalance, createdAt: user.createdAt, totalDeposit: user.totalDeposit, totalSpent: user.totalSpent, emailVerified: user.emailVerified };
