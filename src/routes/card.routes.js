@@ -13,6 +13,7 @@ router.post('/admin/configs/bulk',             protect, adminOnly, uploadCardThu
 router.put('/admin/configs/:id',               protect, adminOnly, uploadCardThumbnail.single('thumbnail'), ctrl.adminUpdateConfig)
 router.delete('/admin/configs/:id',            protect, adminOnly, ctrl.adminDeleteConfig)
 router.delete('/admin/configs/telco/:telco',   protect, adminOnly, ctrl.adminDeleteConfigsByTelco)
+router.put('/admin/configs/telco/:telco',      protect, adminOnly, uploadCardThumbnail.single('thumbnail'), ctrl.adminUpdateConfigsByTelco)
 router.delete('/admin/configs/:id/thumbnail',  protect, adminOnly, ctrl.adminDeleteConfigThumbnail)
 router.put('/admin/configs/telco/:telco/thumbnail', protect, adminOnly, uploadCardThumbnail.single('thumbnail'), ctrl.adminUpdateTelcoThumbnail)
 router.get('/admin/deposits',                  protect, adminOnly, ctrl.adminGetDeposits)

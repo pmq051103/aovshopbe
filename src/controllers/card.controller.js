@@ -437,6 +437,46 @@ const adminDeleteConfigsByTelco = async (req, res) => {
   }
 }
 
+// Sửa NGUYÊN 1 loại thẻ (áp dụng cùng lúc cho tất cả mệnh giá của telco đó) — cho lẹ
+// thay vì phải bấm sửa từng mệnh giá một. Chỉ áp dụng field nào admin thực sự truyền lên;
+// mệnh giá (denomination) và sortOrder KHÔNG sửa hàng loạt được (mỗi mệnh giá khác nhau),
+// muốn đổi 2 field đó thì vẫn phải sửa từng dòng.
+const adminUpdateConfigsByTelco = async (req, res) => {
+  try {
+    const { telco } = req.params
+    const { telcoLabel, depositEnabled, depositDiscount, buyEnabled, buyDiscount } = req.body
+
+    const configs = await prisma.cardConfig.findMany({ where: { telco } })
+    if (configs.length === 0) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy loại thẻ này' })
+    }
+
+    const data = {}
+    if (telcoLabel !== undefined && telcoLabel !== '') data.telcoLabel = telcoLabel.trim()
+    if (depositEnabled !== undefined) data.depositEnabled = depositEnabled === true || depositEnabled === 'true'
+    if (depositDiscount !== undefined && depositDiscount !== '') data.depositDiscount = parseFloat(depositDiscount)
+    if (buyEnabled !== undefined) data.buyEnabled = buyEnabled === true || buyEnabled === 'true'
+    if (buyDiscount !== undefined && buyDiscount !== '') data.buyDiscount = parseFloat(buyDiscount)
+
+    if (req.file) {
+      const oldPublicId = configs.find(c => c.thumbnailPublicId)?.thumbnailPublicId
+      if (oldPublicId) await deleteImage(oldPublicId).catch(() => { })
+      data.thumbnailUrl = req.file.path
+      data.thumbnailPublicId = req.file.filename
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ success: false, message: 'Không có gì để cập nhật' })
+    }
+
+    await prisma.cardConfig.updateMany({ where: { telco }, data })
+
+    res.json({ success: true, message: `Đã cập nhật ${configs.length} mệnh giá của loại thẻ này` })
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message })
+  }
+}
+
 const adminDeleteConfigThumbnail = async (req, res) => {
   try {
     const config = await prisma.cardConfig.findUnique({
@@ -1894,6 +1934,7 @@ module.exports = {
   adminUpdateConfig,
   adminDeleteConfig,
   adminDeleteConfigsByTelco,
+  adminUpdateConfigsByTelco,
   adminDeleteConfigThumbnail,
   adminUpdateTelcoThumbnail,
   adminGetDeposits,
