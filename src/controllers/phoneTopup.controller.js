@@ -685,6 +685,58 @@ async function pollPendingOrders() {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// CALLBACK — đối tác gọi ngược về khi đơn "topup" xử lý xong (async, sau khi
+// tạo lệnh trả về "pending"). ĐĂNG KÝ URL NÀY cho API loại "Recharge" trên
+// trang quản trị đối tác — KHÔNG dùng chung /api/card/callback (chỗ đó là của
+// Charging/Softcard, payload code/serial khác hoàn toàn định dạng order_code
+// của API rechargews này).
+// ══════════════════════════════════════════════════════════════════════════
+const phoneTopupCallback = async (req, res) => {
+  try {
+    console.log('[PHONE TOPUP CALLBACK RECEIVED]', req.body)
+
+    const { request_id, order_code, status, message } = req.body
+    if (!request_id) {
+      return res.json({ status: 200 })
+    }
+
+    const order = await prisma.phoneTopupOrder.findUnique({
+      where: { requestId: String(request_id) },
+    })
+
+    if (!order || order.status !== 'PENDING') {
+      return res.json({ status: 200 })
+    }
+
+    const mappedStatus = mapStatus(status)
+
+    if (mappedStatus === 'PENDING') {
+      // Vẫn đang xử lý, chưa có kết luận cuối cùng -> chỉ lưu lại dữ liệu mới nhất
+      await prisma.phoneTopupOrder.update({
+        where: { id: order.id },
+        data: {
+          providerData: req.body,
+          orderCode: order_code || order.orderCode,
+          lastCheckedAt: new Date(),
+        },
+      })
+      return res.json({ status: 200 })
+    }
+
+    await _finalizeOrder(
+      { ...order, orderCode: order_code || order.orderCode, providerData: req.body },
+      mappedStatus,
+      message || null
+    )
+
+    return res.json({ status: 200 })
+  } catch (e) {
+    console.error('[phoneTopupCallback ERROR]', e)
+    return res.json({ status: 200 })
+  }
+}
+
 module.exports = {
   adminSyncProducts,
   adminGetBalance,
@@ -697,6 +749,7 @@ module.exports = {
   createTopupOrder,
   checkOrderStatus,
   getMyOrders,
+  phoneTopupCallback,
 
   pollPendingOrders,
 }

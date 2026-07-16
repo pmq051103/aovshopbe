@@ -17,5 +17,14 @@ router.get('/configs',           optionalAuth, ctrl.getPublicConfigs)
 router.post('/order',            protect, ctrl.createTopupOrder)
 router.get('/order/:id/check',   protect, ctrl.checkOrderStatus)
 router.get('/my-orders',         protect, ctrl.getMyOrders)
+router.post('/callback',         ctrl.phoneTopupCallback)   // no auth — từ đối tác gọi về
+
+// để nhà cung cấp hoặc ngrok check endpoint
+router.get('/callback', (req, res) => {
+  res.json({
+    status: 200,
+    message: 'phone topup callback endpoint ok',
+  })
+})
 
 module.exports = router
