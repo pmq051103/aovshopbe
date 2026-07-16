@@ -444,7 +444,7 @@ const adminDeleteConfigsByTelco = async (req, res) => {
 const adminUpdateConfigsByTelco = async (req, res) => {
   try {
     const { telco } = req.params
-    const { telcoLabel, depositEnabled, depositDiscount, buyEnabled, buyDiscount } = req.body
+    const { telco: newTelcoRaw, telcoLabel, depositEnabled, depositDiscount, buyEnabled, buyDiscount } = req.body
 
     const configs = await prisma.cardConfig.findMany({ where: { telco } })
     if (configs.length === 0) {
@@ -452,6 +452,30 @@ const adminUpdateConfigsByTelco = async (req, res) => {
     }
 
     const data = {}
+
+    // Đổi luôn MÃ TELCO cho cả nhóm (vd: nhập tay sai lúc đầu, giờ chọn lại đúng mã từ NCC).
+    // Vì (telco, denomination) là unique, phải kiểm tra trùng trước khi đổi hàng loạt.
+    if (newTelcoRaw !== undefined && newTelcoRaw !== '') {
+      const newTelco = newTelcoRaw.toUpperCase().trim().replace(/\s+/g, '_')
+      if (newTelco !== telco) {
+        const existingUnderNew = await prisma.cardConfig.findMany({
+          where: { telco: newTelco },
+          select: { denomination: true }
+        })
+        const existingSet = new Set(existingUnderNew.map(c => c.denomination.toString()))
+        const conflicts = configs.filter(c => existingSet.has(c.denomination.toString()))
+
+        if (conflicts.length > 0) {
+          return res.status(409).json({
+            success: false,
+            message: `Không thể đổi mã telco — "${newTelco}" đã có sẵn mệnh giá ${conflicts.map(c => Number(c.denomination).toLocaleString('vi-VN')).join('đ, ')}đ trùng lặp. Hãy xóa các mệnh giá trùng ở nhóm đích trước, hoặc sửa tay từng dòng.`
+          })
+        }
+
+        data.telco = newTelco
+      }
+    }
+
     if (telcoLabel !== undefined && telcoLabel !== '') data.telcoLabel = telcoLabel.trim()
     if (depositEnabled !== undefined) data.depositEnabled = depositEnabled === true || depositEnabled === 'true'
     if (depositDiscount !== undefined && depositDiscount !== '') data.depositDiscount = parseFloat(depositDiscount)
@@ -473,6 +497,9 @@ const adminUpdateConfigsByTelco = async (req, res) => {
 
     res.json({ success: true, message: `Đã cập nhật ${configs.length} mệnh giá của loại thẻ này` })
   } catch (e) {
+    if (e.code === 'P2002') {
+      return res.status(409).json({ success: false, message: 'Mã telco mới bị trùng mệnh giá với loại thẻ đích, không đổi được.' })
+    }
     res.status(500).json({ success: false, message: e.message })
   }
 }
