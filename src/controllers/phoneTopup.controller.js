@@ -476,10 +476,34 @@ const createTopupOrder = async (req, res) => {
     let apiRes
     try {
       apiRes = await callProviderRecharge({ requestId, phone: phoneClean, serviceCode: config.serviceCode, amount: denom, qty: 1 })
-    } catch (e) {
-      console.error('[PHONE TOPUP API ERROR]', e.response?.data || e.message)
-      await _finalizeOrder(order, 'FAILED', 'Lỗi kết nối nhà cung cấp')
-      return res.status(502).json({ success: false, message: 'Lỗi kết nối nhà cung cấp, tiền đã được hoàn lại' })
+    } catch (e1) {
+      // Lỗi kết nối/timeout/5xx đầu tiên có thể chỉ là chập chờn tạm thời -> thử lại 1 lần
+      // trước khi kết luận thất bại hẳn, tránh hoàn tiền oan khi đối tác chỉ đơ 1 nhịp.
+      console.error('[PHONE TOPUP API ERROR] (lần 1)', e1.response?.status, e1.response?.data || e1.message)
+      await new Promise(r => setTimeout(r, 1500))
+
+      try {
+        apiRes = await callProviderRecharge({ requestId, phone: phoneClean, serviceCode: config.serviceCode, amount: denom, qty: 1 })
+      } catch (e2) {
+        console.error('[PHONE TOPUP API ERROR] (lần 2 - bỏ cuộc)', e2.response?.status, e2.response?.data || e2.message)
+
+        // Lưu lại chi tiết lỗi thật từ đối tác (nếu có) để admin xem trong trang Đơn Nạp,
+        // thay vì chỉ có mỗi dòng "Lỗi kết nối nhà cung cấp" chung chung không debug được.
+        await prisma.phoneTopupOrder.update({
+          where: { id: order.id },
+          data: {
+            providerData: {
+              error: true,
+              status: e2.response?.status || null,
+              data: e2.response?.data || null,
+              message: e2.message,
+            },
+          },
+        }).catch(() => {})
+
+        await _finalizeOrder(order, 'FAILED', 'Lỗi kết nối nhà cung cấp')
+        return res.status(502).json({ success: false, message: 'Lỗi kết nối nhà cung cấp, tiền đã được hoàn lại' })
+      }
     }
 
     // apiRes.status: kết quả gọi API (success/error). apiRes.data.status: trạng thái đơn thật.
