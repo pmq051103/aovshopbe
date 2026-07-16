@@ -1640,14 +1640,6 @@ const buyCard = async (req, res) => {
 
     let apiRes
     try {
-      const { data: ipCheck } = await axios.get('https://api.ipify.org?format=json', {
-        timeout: 8000,
-      })
-      console.log('[SERVER OUTBOUND IP]', ipCheck)
-    } catch (e) {
-      console.log('[SERVER OUTBOUND IP ERROR]', e.message)
-    }
-    try {
       const { data } = await axios.post(GT_BUY_URL, payload, {
         timeout: 25000,
         headers: { 'Content-Type': 'application/json' },
