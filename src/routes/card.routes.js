@@ -21,6 +21,7 @@ router.put('/admin/deposits/:id/status',       protect, adminOnly, ctrl.adminUpd
 router.get('/admin/purchases',                 protect, adminOnly, ctrl.adminGetPurchases)
 router.post('/admin/purchases/:id/resend',     protect, adminOnly, ctrl.adminResendPurchase)
 router.get('/admin/check-card',                protect, adminOnly, ctrl.adminCheckCardSerial)
+router.get('/admin/charging-price-list',       protect, adminOnly, ctrl.adminGetChargingPriceList)
 
 // ── Public — cấu hình thẻ (để FE render form) ─────────────────────────────
 router.get('/configs', ctrl.getPublicConfigs)

@@ -58,6 +58,100 @@ const REVERSE_SERVICE_CODE_MAP = Object.fromEntries(
   Object.entries(LEGACY_SERVICE_CODE_FALLBACK).map(([code, serviceCode]) => [serviceCode.toLowerCase(), code])
 )
 
+// ══════════════════════════════════════════════════════════════════════════
+// ⚠️ QUAN TRỌNG: API NẠP THẺ (chargingws/v2) và API MUA THẺ (cardws) là 2 API
+// KHÁC NHAU của cùng đối tác, và dùng 2 QUY ƯỚC MÃ TELCO KHÁC NHAU:
+//   - cardws (MUA thẻ)  → service_code rút gọn: "Vina", "Mobi", "Vnmobile"...
+//   - chargingws/v2 (NẠP thẻ) → tên ĐẦY ĐỦ viết hoa: "VIETTEL", "MOBIFONE"...
+//     (xem doc chính thức: body mẫu dùng telco="MOBIFONE", response trả về
+//     telco="VIETTEL")
+// CardConfig.serviceCode được lấy từ cardws/products (dạng rút gọn) nên KHÔNG
+// được dùng trực tiếp làm `telco` khi gọi chargingws/v2 — nếu không đối tác sẽ
+// trả "Loại thẻ hoặc mệnh giá không tồn tại" dù thẻ hợp lệ. Bảng dưới đây map
+// các dạng rút gọn phổ biến trong catalog cardws sang tên đầy đủ đúng chuẩn
+// chargingws/v2 để tự sửa (self-heal) cho cả cấu hình cũ lẫn mới.
+// ══════════════════════════════════════════════════════════════════════════
+const CHARGING_TELCO_NORMALIZE = {
+  VINA: 'VINAPHONE',
+  MOBI: 'MOBIFONE',
+  VNMOBILE: 'VIETNAMOBILE',
+  VNMOBI: 'VIETNAMOBILE',
+}
+
+// Lấy mã telco ĐÚNG CHUẨN để gửi cho API NẠP THẺ (chargingws/v2).
+// Ưu tiên chuẩn hoá từ config.telco (mã nội bộ) — KHÔNG dùng config.serviceCode
+// vì đó là mã của API MUA thẻ (cardws), khác quy ước.
+const resolveChargingTelco = config => {
+  const raw = String(config.telco || '').toUpperCase().trim()
+  const normalized = CHARGING_TELCO_NORMALIZE[raw] || raw
+
+  if (normalized !== raw) {
+    console.warn(
+      `[CARD CHARGING] Tự động chuẩn hoá telco "${raw}" → "${normalized}" cho cấu hình id=${config.id} ` +
+      `(mã rút gọn từ catalog cardws không dùng được cho chargingws/v2).`
+    )
+  }
+
+  return normalized
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Danh sách mã telco + phí/phạt THẬT lấy từ API "giá tẩy thẻ" của đối tác
+// (chargingws/price) — dùng để:
+//  1) Biết chính xác danh sách mã hợp lệ hiện tại (không phải đoán/hardcode)
+//  2) Tự cảnh báo nếu 1 cấu hình đang gửi mã KHÔNG có trong danh sách thật
+// Có cache (TTL) để tránh gọi API đối tác trên mỗi lượt nạp thẻ — chỉ dùng để
+// LOG CẢNH BÁO, không chặn/thay đổi luồng nạp thẻ nếu API này lỗi.
+// ══════════════════════════════════════════════════════════════════════════
+const CHARGING_PRICE_URL = process.env.CARD_CHARGING_PRICE_URL
+  || `${GT_URL.replace(/\/chargingws\/v2\/?$/, '')}/chargingws/price`
+const CHARGING_PRICE_CACHE_TTL_MS = 10 * 60 * 1000 // 10 phút
+
+let _chargingPriceCache = { data: null, fetchedAt: 0 }
+
+const getChargingPriceList = async () => {
+  const now = Date.now()
+  if (_chargingPriceCache.data && (now - _chargingPriceCache.fetchedAt) < CHARGING_PRICE_CACHE_TTL_MS) {
+    return _chargingPriceCache.data
+  }
+
+  try {
+    const { data } = await axios.get(CHARGING_PRICE_URL, {
+      params: { partner_id: GT_PARTNER_ID },
+      timeout: 5000,
+    })
+
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      _chargingPriceCache = { data, fetchedAt: now }
+    }
+  } catch (e) {
+    console.warn(
+      '[CARD CHARGING] Không lấy được danh sách giá/mã telco hợp lệ từ đối tác: ' +
+      (e.response?.data?.message || e.message)
+    )
+  }
+
+  return _chargingPriceCache.data
+}
+
+// Kiểm tra (không chặn luồng) xem mã telco đã chuẩn hoá có thực sự tồn tại
+// trong danh sách thật của đối tác không — log cảnh báo sớm nếu lệch, để admin
+// biết mà sửa cấu hình TRƯỚC KHI khách gặp lỗi hàng loạt với 1 loại thẻ.
+const warnIfChargingTelcoInvalid = (chargingTelco, config) => {
+  getChargingPriceList()
+    .then(priceList => {
+      if (!priceList) return // API lỗi hoặc chưa có cache — bỏ qua, không chặn gì
+      if (!(chargingTelco in priceList)) {
+        console.warn(
+          `[CARD CHARGING] ⚠️ Mã telco "${chargingTelco}" (cấu hình id=${config.id}, telco nội bộ="${config.telco}") ` +
+          `KHÔNG có trong danh sách mã hợp lệ hiện tại từ đối tác: [${Object.keys(priceList).join(', ')}]. ` +
+          `Vào Admin > Cấu hình thẻ kiểm tra lại loại thẻ này.`
+        )
+      }
+    })
+    .catch(() => {}) // best-effort, không được làm ảnh hưởng luồng nạp thẻ chính
+}
+
 // Lấy service_code THẬT để gửi cho đối tác khi mua/nạp thẻ.
 // Luôn ưu tiên config.serviceCode (lấy thẳng từ API /products của đối tác lúc tạo cấu hình).
 // Chỉ khi cấu hình đó chưa có serviceCode (dòng cũ tạo trước khi có field này) mới
@@ -114,8 +208,10 @@ const adminGetCardProducts = async (req, res) => {
 
     const products = rawList.map(p => {
       const serviceCode = p.service_code || ''
+      const scUpper = serviceCode.toUpperCase().replace(/\s+/g, '_')
       const telco = REVERSE_SERVICE_CODE_MAP[serviceCode.toLowerCase()]
-        || serviceCode.toUpperCase().replace(/\s+/g, '_')
+        || CHARGING_TELCO_NORMALIZE[scUpper]
+        || scUpper
 
       const denominations = (p.cardvalue || [])
         .map(cv => parseFloat(cv.value ?? cv.denomination ?? cv.face_value ?? cv.price ?? cv.mfaceValue))
@@ -137,9 +233,33 @@ const adminGetCardProducts = async (req, res) => {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// ADMIN — Quản lý cấu hình thẻ
-// ════════════════════════════════════════════════════════════════════════════
+// Lấy danh sách mã telco + phí/phạt THẬT từ đối tác (API "giá tẩy thẻ"), kèm
+// đối chiếu sẵn với các cấu hình hiện có để admin thấy ngay cấu hình nào đang
+// lệch mã (không nằm trong danh sách hợp lệ thật của đối tác).
+const adminGetChargingPriceList = async (req, res) => {
+  try {
+    // Bỏ qua cache khi admin chủ động vào xem, để luôn thấy dữ liệu mới nhất
+    _chargingPriceCache = { data: null, fetchedAt: 0 }
+    const priceList = await getChargingPriceList()
+
+    if (!priceList) {
+      return res.status(502).json({ success: false, message: 'Không lấy được danh sách giá/mã telco từ đối tác' })
+    }
+
+    const configs = await prisma.cardConfig.findMany({ select: { id: true, telco: true, telcoLabel: true } })
+    const uniqueTelcos = [...new Map(configs.map(c => [c.telco, c])).values()]
+
+    const mismatches = uniqueTelcos
+      .map(c => ({ ...c, chargingTelco: resolveChargingTelco(c) }))
+      .filter(c => !(c.chargingTelco in priceList))
+      .map(c => ({ id: c.id, telco: c.telco, telcoLabel: c.telcoLabel, chargingTelco: c.chargingTelco }))
+
+    res.json({ success: true, data: { priceList, mismatches } })
+  } catch (e) {
+    res.status(502).json({ success: false, message: 'Lỗi lấy danh sách giá/mã telco: ' + (e.response?.data?.message || e.message) })
+  }
+}
+
 
 const adminGetConfigs = async (req, res) => {
   try {
@@ -940,10 +1060,12 @@ const depositCard = async (req, res) => {
       serialClean
     )
 
-    // ⚠️ QUAN TRỌNG: gửi service_code THẬT của đối tác (config.serviceCode), KHÔNG gửi
-    // thẳng config.telco — telco chỉ là mã nội bộ để nhóm/hiển thị, có thể không khớp
-    // với mã đối tác thực sự yêu cầu.
-    const serviceCode = resolveServiceCode(config)
+    // ⚠️ QUAN TRỌNG: API NẠP THẺ (chargingws/v2) cần TÊN ĐẦY ĐỦ viết hoa
+    // (VIETTEL, MOBIFONE, VINAPHONE...), KHÁC với config.serviceCode (dạng rút
+    // gọn "Vina", "Mobi"... lấy từ API MUA thẻ/cardws). Gửi nhầm sẽ bị đối tác
+    // trả lỗi "Loại thẻ hoặc mệnh giá không tồn tại" dù thẻ hoàn toàn hợp lệ.
+    const chargingTelco = resolveChargingTelco(config)
+    warnIfChargingTelcoInvalid(chargingTelco, config)
 
     const cardDeposit = await prisma.cardDeposit.create({
       data: {
@@ -951,7 +1073,7 @@ const depositCard = async (req, res) => {
         cardConfigId: config.id,
         requestId,
         telco: config.telco,
-        serviceCode,
+        serviceCode: resolveServiceCode(config),
         code: codeClean,
         serial: serialClean,
         declaredAmount: amount,
@@ -961,7 +1083,7 @@ const depositCard = async (req, res) => {
     })
 
     const payload = {
-      telco: serviceCode,
+      telco: chargingTelco,
       code: codeClean,
       serial: serialClean,
       amount: String(amount),
@@ -1996,8 +2118,13 @@ const adminCheckCardSerial = async (req, res) => {
     const serialClean = String(serial).trim().replace(/[\s-]/g, '')
     const sign = md5(CARD_CHECK_PARTNER_KEY, serialClean)
 
+    // Dùng chung tài khoản đối tác với CHARGING (chargingws/v2) nên cũng cần
+    // chuẩn hoá về tên đầy đủ viết hoa, phòng trường hợp phía client gửi lên
+    // dạng rút gọn của catalog cardws (vd "Vina" thay vì "VINAPHONE").
+    const telcoNormalized = CHARGING_TELCO_NORMALIZE[String(telco).toUpperCase().trim()] || String(telco).toUpperCase().trim()
+
     const { data: apiRes } = await axios.post(CARD_CHECK_URL, null, {
-      params: { telco, serial: serialClean, partner_id: CARD_CHECK_PARTNER_ID, sign },
+      params: { telco: telcoNormalized, serial: serialClean, partner_id: CARD_CHECK_PARTNER_ID, sign },
       timeout: 15000,
     })
 
@@ -2029,6 +2156,7 @@ module.exports = {
   adminUpdateDepositStatus,
   adminResendPurchase,
   adminCheckCardSerial,
+  adminGetChargingPriceList,
 
   getPublicConfigs,
 
