@@ -32,7 +32,19 @@ const genRequestId = () => `${Date.now()}${Math.floor(Math.random() * 100000)}`
 const mapDepositStatus = s =>
   s === 1 ? 'SUCCESS' : s === 2 ? 'WRONG_VALUE' : s === 3 ? 'FAILED' : s === 99 ? 'PENDING' : 'FAILED'
 
-const SERVICE_CODE_MAP = {
+// ══════════════════════════════════════════════════════════════════════════
+// ⚠️ LEGACY FALLBACK — KHÔNG dùng để gửi request cho đối tác nữa.
+// Bảng này từng bị dùng để "đoán" service_code từ mã telco nội bộ, nhưng đối
+// tác có thể đổi mã bất cứ lúc nào (vd VINAPHONE -> VINA, MOBIFONE -> MOBI,
+// VIETNAMOBILE -> VNMOBILE) khiến bảng cứng này sai mà không ai biết, gửi
+// nhầm service_code cho đối tác. Nguồn đúng duy nhất là field
+// `CardConfig.serviceCode`, lấy trực tiếp từ API GET /products của đối tác
+// (xem adminGetCardProducts) và lưu lại lúc tạo/sửa cấu hình.
+// Bảng dưới đây CHỈ còn tác dụng cho các dòng cấu hình cũ tạo từ trước khi có
+// field serviceCode (chưa được admin cập nhật lại) — dùng resolveServiceCode()
+// bên dưới, không gọi trực tiếp bảng này ở chỗ khác.
+// ══════════════════════════════════════════════════════════════════════════
+const LEGACY_SERVICE_CODE_FALLBACK = {
   VIETTEL: 'Viettel',
   VINAPHONE: 'Vinaphone',
   MOBIFONE: 'Mobifone',
@@ -43,8 +55,25 @@ const SERVICE_CODE_MAP = {
   GATE: 'Gate',
 }
 const REVERSE_SERVICE_CODE_MAP = Object.fromEntries(
-  Object.entries(SERVICE_CODE_MAP).map(([code, serviceCode]) => [serviceCode.toLowerCase(), code])
+  Object.entries(LEGACY_SERVICE_CODE_FALLBACK).map(([code, serviceCode]) => [serviceCode.toLowerCase(), code])
 )
+
+// Lấy service_code THẬT để gửi cho đối tác khi mua/nạp thẻ.
+// Luôn ưu tiên config.serviceCode (lấy thẳng từ API /products của đối tác lúc tạo cấu hình).
+// Chỉ khi cấu hình đó chưa có serviceCode (dòng cũ tạo trước khi có field này) mới
+// tạm dùng bảng cứng LEGACY_SERVICE_CODE_FALLBACK — và luôn log cảnh báo để admin biết
+// vào sửa lại cấu hình (chọn lại từ danh sách sản phẩm thật hoặc nhập tay đúng service_code).
+const resolveServiceCode = config => {
+  if (config.serviceCode && config.serviceCode.trim()) return config.serviceCode.trim()
+
+  const fallback = LEGACY_SERVICE_CODE_FALLBACK[config.telco]
+  console.warn(
+    `[CARD] Cấu hình telco="${config.telco}" (id=${config.id}) chưa có serviceCode thật — ` +
+    `đang tạm dùng fallback cứng "${fallback || config.telcoLabel || config.telco}". ` +
+    `Vào Admin > Cấu hình thẻ, sửa lại telco này và chọn đúng service_code từ danh sách sản phẩm đối tác để tránh gửi sai.`
+  )
+  return fallback || config.telcoLabel || config.telco
+}
 
 // Lấy số dư ví bên đối tác (API mua thẻ) — hiển thị cho admin biết còn bao nhiêu tiền để mua thẻ cho khách
 const adminGetCardBalance = async (req, res) => {
@@ -130,6 +159,7 @@ const adminCreateConfig = async (req, res) => {
     const {
       telco,
       telcoLabel,
+      serviceCode,
       denomination,
       depositEnabled,
       depositDiscount,
@@ -140,6 +170,12 @@ const adminCreateConfig = async (req, res) => {
 
     if (!telco || !denomination) {
       return res.status(400).json({ success: false, message: 'Thiếu telco hoặc mệnh giá' })
+    }
+    if (!serviceCode || !String(serviceCode).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Thiếu service_code — hãy chọn loại thẻ từ danh sách sản phẩm thật của đối tác (mục "Chọn nhanh"), hoặc nhập đúng service_code đối tác cung cấp.',
+      })
     }
 
     const telcoKey = telco.toUpperCase().trim().replace(/\s+/g, '_')
@@ -172,6 +208,7 @@ const adminCreateConfig = async (req, res) => {
     const data = {
       telco: telcoKey,
       telcoLabel: telcoLabel?.trim() || telco.trim(),
+      serviceCode: String(serviceCode).trim(),
       denomination: denom,
       depositEnabled: depositEnabled !== false && depositEnabled !== 'false',
       depositDiscount: parseFloat(depositDiscount ?? 27),
@@ -215,10 +252,16 @@ const adminCreateConfig = async (req, res) => {
 // File ảnh (nếu có) dùng chung cho tất cả mệnh giá thuộc telco này.
 const adminBulkCreateConfig = async (req, res) => {
   try {
-    const { telco, telcoLabel, sortOrder } = req.body
+    const { telco, telcoLabel, serviceCode, sortOrder } = req.body
     let items = req.body.items
 
     if (!telco) return res.status(400).json({ success: false, message: 'Thiếu telco' })
+    if (!serviceCode || !String(serviceCode).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Thiếu service_code — hãy chọn loại thẻ từ danh sách sản phẩm thật của đối tác, hoặc nhập đúng service_code đối tác cung cấp.',
+      })
+    }
     if (typeof items === 'string') {
       try { items = JSON.parse(items) } catch { items = [] }
     }
@@ -265,6 +308,7 @@ const adminBulkCreateConfig = async (req, res) => {
         data: {
           telco: telcoKey,
           telcoLabel: telcoLabel?.trim() || telco.trim(),
+          serviceCode: String(serviceCode).trim(),
           denomination: denom,
           depositEnabled: item.depositEnabled !== false && item.depositEnabled !== 'false',
           depositDiscount: parseFloat(item.depositDiscount ?? 27),
@@ -306,6 +350,7 @@ const adminUpdateConfig = async (req, res) => {
       sortOrder,
       telco,
       telcoLabel,
+      serviceCode,
       denomination,
     } = req.body
 
@@ -321,6 +366,11 @@ const adminUpdateConfig = async (req, res) => {
 
     if (telco !== undefined) data.telco = telco.toUpperCase().trim().replace(/\s+/g, '_')
     if (telcoLabel !== undefined) data.telcoLabel = telcoLabel?.trim() || undefined
+    if (serviceCode !== undefined) {
+      const sc = String(serviceCode).trim()
+      if (!sc) return res.status(400).json({ success: false, message: 'service_code không được để trống' })
+      data.serviceCode = sc
+    }
     if (denomination !== undefined) data.denomination = parseFloat(denomination)
     if (depositEnabled !== undefined) data.depositEnabled = depositEnabled === true || depositEnabled === 'true'
     if (depositDiscount !== undefined) data.depositDiscount = parseFloat(depositDiscount)
@@ -444,7 +494,7 @@ const adminDeleteConfigsByTelco = async (req, res) => {
 const adminUpdateConfigsByTelco = async (req, res) => {
   try {
     const { telco } = req.params
-    const { telco: newTelcoRaw, telcoLabel, depositEnabled, depositDiscount, buyEnabled, buyDiscount } = req.body
+    const { telco: newTelcoRaw, telcoLabel, serviceCode, depositEnabled, depositDiscount, buyEnabled, buyDiscount } = req.body
 
     const configs = await prisma.cardConfig.findMany({ where: { telco } })
     if (configs.length === 0) {
@@ -477,6 +527,7 @@ const adminUpdateConfigsByTelco = async (req, res) => {
     }
 
     if (telcoLabel !== undefined && telcoLabel !== '') data.telcoLabel = telcoLabel.trim()
+    if (serviceCode !== undefined && serviceCode !== '') data.serviceCode = String(serviceCode).trim()
     if (depositEnabled !== undefined) data.depositEnabled = depositEnabled === true || depositEnabled === 'true'
     if (depositDiscount !== undefined && depositDiscount !== '') data.depositDiscount = parseFloat(depositDiscount)
     if (buyEnabled !== undefined) data.buyEnabled = buyEnabled === true || buyEnabled === 'true'
@@ -889,12 +940,18 @@ const depositCard = async (req, res) => {
       serialClean
     )
 
+    // ⚠️ QUAN TRỌNG: gửi service_code THẬT của đối tác (config.serviceCode), KHÔNG gửi
+    // thẳng config.telco — telco chỉ là mã nội bộ để nhóm/hiển thị, có thể không khớp
+    // với mã đối tác thực sự yêu cầu.
+    const serviceCode = resolveServiceCode(config)
+
     const cardDeposit = await prisma.cardDeposit.create({
       data: {
         userId: req.user.id,
         cardConfigId: config.id,
         requestId,
         telco: config.telco,
+        serviceCode,
         code: codeClean,
         serial: serialClean,
         declaredAmount: amount,
@@ -904,7 +961,7 @@ const depositCard = async (req, res) => {
     })
 
     const payload = {
-      telco: config.telco,
+      telco: serviceCode,
       code: codeClean,
       serial: serialClean,
       amount: String(amount),
@@ -1406,6 +1463,7 @@ const buyCard = async (req, res) => {
           userId: req.user.id,
           cardConfigId: config.id,
           telco: config.telco,
+          serviceCode: resolveServiceCode(config),
           denomination: denom,
           buyDiscount: totalDiscountPercent,
           unitPrice,
@@ -1437,7 +1495,9 @@ const buyCard = async (req, res) => {
     // Cập nhật VIP sau khi mua thẻ
     recalculateVip(req.user.id).catch(err => console.error('recalculateVip after card purchase:', err))
 
-    const serviceCode = SERVICE_CODE_MAP[config.telco] || config.telcoLabel || config.telco
+    // ⚠️ QUAN TRỌNG: gửi service_code THẬT của đối tác (config.serviceCode), KHÔNG tự
+    // suy ra từ mã telco nội bộ — đó chính là nguyên nhân gây gửi sai mã cho đối tác.
+    const serviceCode = resolveServiceCode(config)
 
     const payload = {
       partner_id: GT_BUY_PARTNER_ID,
