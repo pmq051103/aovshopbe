@@ -131,6 +131,59 @@ const TOOL_DECLARATIONS = [
       },
     },
   },
+  {
+    name: 'search_auctions',
+    description:
+      'Tìm các phòng đấu giá acc Liên Quân (đang mở/sắp diễn ra/đã kết thúc). Gọi khi user hỏi về đấu giá, phòng đấu giá, acc đang đấu giá, sắp đấu giá, ai đang thắng, giá hiện tại.',
+    parameters: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Trạng thái phòng: SCHEDULED (sắp diễn ra) | ACTIVE (đang nhận bid) | ENDED (đã kết thúc). Không truyền = lấy SCHEDULED và ACTIVE.',
+        },
+        limit: { type: 'number', description: 'Số lượng kết quả, tối đa 10' },
+      },
+    },
+  },
+  {
+    name: 'get_auction_detail',
+    description:
+      'Lấy chi tiết một phòng đấu giá cụ thể: giá hiện tại, người đang giữ giá, bước giá, thời gian kết thúc, lịch sử bid gần nhất. Gọi khi user hỏi về một phòng đấu giá cụ thể hoặc hỏi tiếp về phòng vừa nhắc.',
+    parameters: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'ID của phòng đấu giá' },
+        title: { type: 'string', description: 'Tên/tiêu đề phòng đấu giá để tìm gần đúng nếu không có ID' },
+      },
+    },
+  },
+  {
+    name: 'search_marketplace',
+    description:
+      'Tìm tin đăng bán acc trên chợ trao đổi (marketplace P2P giữa user với nhau, khác với acc shop bán trực tiếp). Gọi khi user hỏi về chợ trao đổi, tin đăng bán acc của người khác, acc ký gửi, mua acc từ người bán khác.',
+    parameters: {
+      type: 'object',
+      properties: {
+        minPrice: { type: 'number', description: 'Giá tối thiểu (VND)' },
+        maxPrice: { type: 'number', description: 'Giá tối đa (VND)' },
+        hasFullInfo: { type: 'boolean', description: 'true = chỉ lấy tin acc có bind info (email/sđt/fb)' },
+        keyword: { type: 'string', description: 'Từ khóa tìm trong tiêu đề tin đăng' },
+        limit: { type: 'number', description: 'Số lượng kết quả, tối đa 10' },
+      },
+    },
+  },
+  {
+    name: 'get_marketplace_listing_detail',
+    description:
+      'Lấy chi tiết một tin đăng cụ thể trên chợ trao đổi: giá, mô tả, thông tin liên hệ người bán, trạng thái duyệt. Gọi khi user hỏi về một tin đăng cụ thể trên chợ trao đổi.',
+    parameters: {
+      type: 'object',
+      properties: {
+        listingId: { type: 'string', description: 'ID của tin đăng' },
+      },
+    },
+  },
 ]
 
 /* ══════════════════════════════════════════════════════════
@@ -919,6 +972,201 @@ async function execGetRanking(args) {
   }
 }
 
+async function execSearchAuctions(args = {}) {
+  try {
+    const { status, limit = 8 } = args
+    const normalizedStatus = status ? String(status).trim().toUpperCase() : null
+
+    const where = normalizedStatus
+      ? { status: normalizedStatus }
+      : { status: { in: ['SCHEDULED', 'ACTIVE'] } }
+
+    const rooms = await prisma.auctionRoom.findMany({
+      where,
+      orderBy: [{ status: 'asc' }, { scheduledAt: 'asc' }],
+      take: Math.min(limit, 10),
+      include: {
+        gameAccount: {
+          select: { code: true, title: true, rank: true, skins: true, champions: true },
+        },
+      },
+    })
+
+    return {
+      count: rooms.length,
+      auctions: rooms.map(r => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        scheduledAt: r.scheduledAt,
+        startedAt: r.startedAt,
+        endsAt: r.endsAt,
+        startingPrice: Number(r.startingPrice),
+        bidStep: Number(r.bidStep),
+        currentPrice: r.currentPrice != null ? Number(r.currentPrice) : Number(r.startingPrice),
+        totalBids: r.totalBids,
+        account: r.gameAccount
+          ? {
+              code: r.gameAccount.code,
+              title: r.gameAccount.title,
+              rank: r.gameAccount.rank,
+              skins: r.gameAccount.skins,
+              champions: r.gameAccount.champions,
+            }
+          : null,
+      })),
+    }
+  } catch (err) {
+    logger.error('[Tool:search_auctions]', err)
+    return { count: 0, auctions: [], error: err.message }
+  }
+}
+
+async function execGetAuctionDetail(args = {}) {
+  try {
+    const { roomId, title } = args
+    if (!roomId && !title) {
+      return { found: false, message: 'Cần roomId hoặc title để tra cứu phòng đấu giá' }
+    }
+
+    const room = await prisma.auctionRoom.findFirst({
+      where: roomId ? { id: roomId } : { title: { contains: title } },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        gameAccount: {
+          select: { code: true, title: true, rank: true, skins: true, champions: true, server: true },
+        },
+        winner: { select: { username: true, displayName: true } },
+        bids: {
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          include: { user: { select: { username: true, displayName: true } } },
+        },
+      },
+    })
+
+    if (!room) {
+      return { found: false, message: 'Không tìm thấy phòng đấu giá phù hợp' }
+    }
+
+    return {
+      found: true,
+      id: room.id,
+      title: room.title,
+      description: room.description,
+      status: room.status,
+      scheduledAt: room.scheduledAt,
+      startedAt: room.startedAt,
+      endsAt: room.endsAt,
+      startingPrice: Number(room.startingPrice),
+      bidStep: Number(room.bidStep),
+      currentPrice: room.currentPrice != null ? Number(room.currentPrice) : Number(room.startingPrice),
+      totalBids: room.totalBids,
+      winner: room.winner ? (room.winner.displayName || room.winner.username) : null,
+      account: room.gameAccount
+        ? {
+            code: room.gameAccount.code,
+            title: room.gameAccount.title,
+            rank: room.gameAccount.rank,
+            skins: room.gameAccount.skins,
+            champions: room.gameAccount.champions,
+            server: room.gameAccount.server,
+          }
+        : null,
+      recentBids: room.bids.map(b => ({
+        username: b.user.displayName || b.user.username,
+        amount: Number(b.amount),
+        isWinning: b.isWinning,
+        createdAt: b.createdAt,
+      })),
+    }
+  } catch (err) {
+    logger.error('[Tool:get_auction_detail]', err)
+    return { found: false, error: err.message }
+  }
+}
+
+async function execSearchMarketplace(args = {}) {
+  try {
+    const { minPrice, maxPrice, hasFullInfo, keyword, limit = 8 } = args
+
+    const where = { status: 'APPROVED' }
+    if (minPrice || maxPrice) {
+      where.price = {}
+      if (minPrice) where.price.gte = Number(minPrice)
+      if (maxPrice) where.price.lte = Number(maxPrice)
+    }
+    if (hasFullInfo === true) where.hasFullInfo = true
+    if (hasFullInfo === false) where.hasFullInfo = false
+    if (keyword) where.title = { contains: keyword }
+
+    const listings = await prisma.marketplaceListing.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 10),
+      include: {
+        seller: { select: { username: true, displayName: true } },
+      },
+    })
+
+    return {
+      count: listings.length,
+      listings: listings.map(l => ({
+        id: l.id,
+        title: l.title,
+        price: Number(l.price),
+        feePercent: Number(l.feePercent),
+        hasFullInfo: l.hasFullInfo,
+        seller: l.seller.displayName || l.seller.username,
+        createdAt: l.createdAt,
+      })),
+    }
+  } catch (err) {
+    logger.error('[Tool:search_marketplace]', err)
+    return { count: 0, listings: [], error: err.message }
+  }
+}
+
+async function execGetMarketplaceListingDetail(args = {}) {
+  try {
+    const { listingId } = args
+    if (!listingId) {
+      return { found: false, message: 'Cần listingId để tra cứu tin đăng' }
+    }
+
+    const listing = await prisma.marketplaceListing.findUnique({
+      where: { id: listingId },
+      include: {
+        seller: { select: { username: true, displayName: true } },
+      },
+    })
+
+    if (!listing) {
+      return { found: false, message: 'Không tìm thấy tin đăng này' }
+    }
+
+    // Chỉ lộ thông tin liên hệ khi tin đã được duyệt công khai (APPROVED)
+    const isPublic = listing.status === 'APPROVED'
+
+    return {
+      found: true,
+      id: listing.id,
+      title: listing.title,
+      description: listing.description,
+      price: Number(listing.price),
+      feePercent: Number(listing.feePercent),
+      hasFullInfo: listing.hasFullInfo,
+      status: listing.status,
+      seller: listing.seller.displayName || listing.seller.username,
+      contactInfo: isPublic ? listing.contactInfo : null,
+      soldAt: listing.soldAt,
+    }
+  } catch (err) {
+    logger.error('[Tool:get_marketplace_listing_detail]', err)
+    return { found: false, error: err.message }
+  }
+}
+
 /* ══════════════════════════════════════════════════════════
    DISPATCHER — Gọi đúng executor theo tên tool
    ══════════════════════════════════════════════════════════ */
@@ -935,6 +1183,10 @@ async function executeTool(toolName, args, userId) {
     case 'get_wheel_info': return execGetWheelInfo()
     case 'get_ranking': return execGetRanking(args)
     case 'get_card_config': return execGetCardConfig(args)
+    case 'search_auctions': return execSearchAuctions(args)
+    case 'get_auction_detail': return execGetAuctionDetail(args)
+    case 'search_marketplace': return execSearchMarketplace(args)
+    case 'get_marketplace_listing_detail': return execGetMarketplaceListingDetail(args)
     default:
       return { error: `Tool "${toolName}" không tồn tại` }
   }

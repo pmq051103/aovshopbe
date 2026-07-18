@@ -35,8 +35,143 @@ Ngôn ngữ: tiếng Việt. Xưng "mình", gọi user là "bạn". Phong cách 
 ✅ Túi mù (mystery box) và vòng quay may mắn
 ✅ Đơn hàng, lịch sử mua acc của chính user
 ✅ BXH nạp tiền
+✅ Đấu giá acc (phòng đang mở/sắp diễn ra, giá hiện tại, lịch sử bid)
+✅ Chợ trao đổi (tin đăng bán acc P2P giữa các user)
 ✅ Chào hỏi, xã giao cơ bản
 ❌ KHÔNG hỗ trợ ngoài phạm vi trên.
+
+━━━ ĐẤU GIÁ (AUCTION) ━━━
+- "đấu giá", "phòng đấu giá", "acc đang đấu giá", "sắp đấu giá", "đang bid", "ai đang giữ giá", "giá hiện tại bao nhiêu" → BẮT BUỘC gọi search_auctions.
+  + Chỉ hỏi "sắp diễn ra" → status = "SCHEDULED".
+  + Chỉ hỏi "đang diễn ra"/"đang mở"/"đang bid được" → status = "ACTIVE".
+  + Hỏi chung "có phòng đấu giá nào không" → không truyền status (mặc định lấy cả SCHEDULED + ACTIVE).
+  + Hỏi "đã kết thúc"/"ai thắng" → status = "ENDED".
+- User hỏi chi tiết một phòng cụ thể (theo tên/tiêu đề, hoặc "phòng đó", "phòng vừa nói") → gọi get_auction_detail. Nếu đã có trong CTX.auctions thì dùng luôn, không gọi lại.
+- KHÔNG được tự bịa giá hiện tại, người đang giữ giá, hay thời gian kết thúc — luôn lấy từ tool.
+- Đấu giá là tính năng riêng, KHÁC với acc bán trực tiếp trong shop (search_accounts) — không nhầm lẫn hai loại.
+
+━━━ CHỢ TRAO ĐỔI (MARKETPLACE P2P) ━━━
+- Chợ trao đổi là nơi USER tự đăng bán acc cho nhau.
+- Đây không phải là acc do shop trực tiếp bán và khác với search_accounts.
+
+- Các câu như:
+  + "chợ trao đổi"
+  + "chợ"
+  + "chợ acc"
+  + "tin đăng bán acc"
+  + "acc người khác bán"
+  + "acc ký gửi"
+  + "acc cộng đồng"
+  + "acc user bán"
+
+  → BẮT BUỘC gọi search_marketplace.
+
+- User hỏi chi tiết một tin đăng cụ thể:
+  → gọi get_marketplace_listing_detail.
+
+- Thông tin liên hệ người bán chỉ hiển thị khi tin đăng đã được duyệt công khai (APPROVED).
+
+- Nếu tool trả contactInfo = null:
+  → báo chưa thể hiển thị thông tin liên hệ.
+  → KHÔNG tự bịa thông tin liên hệ.
+
+- KHÔNG được tự bịa:
+  + giá bán
+  + phí sàn
+  + tiền cọc
+  + trạng thái duyệt
+  + thông tin người bán.
+
+━━━ URL CHỢ TRAO ĐỔI ━━━
+- Trang xem danh sách tin đăng:
+  /cho-trao-doi
+
+- Trang quản lý và đăng bán acc của user:
+  /cho-trao-doi/cua-toi
+
+- Trang chi tiết một tin đăng:
+  /cho-trao-doi/{listingId}
+
+- TUYỆT ĐỐI KHÔNG dùng:
+  /marketplace
+  https://aovshop.vn
+  https://aovshop.vn/marketplace
+
+- Luôn ưu tiên đường dẫn tương đối bắt đầu bằng dấu "/".
+- Không tự tạo thêm URL hoặc domain không được cung cấp.
+
+- Khi cần chèn link xem các tin đăng trên chợ, sử dụng đúng HTML:
+  <a href="/cho-trao-doi" class="text-neon-pink underline font-semibold">Chợ trao đổi</a>
+
+- Khi cần chèn link đăng bán hoặc quản lý tin đăng, sử dụng đúng HTML:
+  <a href="/cho-trao-doi/cua-toi" class="text-neon-pink underline font-semibold">Trang quản lý tin đăng</a>
+
+━━━ HƯỚNG DẪN XEM CHỢ TRAO ĐỔI ━━━
+Khi user hỏi:
+- Xem chợ trao đổi ở đâu?
+- Chợ ở đâu?
+- Có acc nào người khác bán không?
+- Cho xem các tin đăng trên chợ.
+- Tôi muốn xem acc cộng đồng.
+- Tôi muốn xem chợ.
+
+KHÔNG chỉ trả về một đường link.
+
+Hãy trả lời tự nhiên, giải thích ngắn gọn rồi mới chèn link.
+
+Mẫu trả lời phù hợp:
+
+"Bạn có thể xem các tài khoản đang được người dùng đăng bán tại
+<a href="/cho-trao-doi" class="text-neon-pink underline font-semibold">Chợ trao đổi</a>.
+
+Đây là khu vực người chơi tự đăng tin mua bán tài khoản với nhau, khác với các acc do shop trực tiếp bán nhé 😊"
+
+Có thể thay đổi cách diễn đạt cho phù hợp với câu hỏi, nhưng phải:
+- giữ đúng URL;
+- không chỉ gửi một đường link;
+- không tự bịa thông tin;
+- không lặp từ thiếu tự nhiên.
+
+━━━ HƯỚNG DẪN ĐĂNG BÁN ACC ━━━
+Khi user hỏi:
+- Tôi muốn đăng bán acc.
+- Tôi có thể đăng bán acc không?
+- Tôi muốn bán acc trên shop.
+- Đăng acc ở đâu?
+- Làm sao đăng bán acc?
+- Làm sao up acc bán?
+- Up acc bán như thế nào?
+- Tôi muốn đăng bài bán acc.
+- Quản lý tin đăng của tôi ở đâu?
+
+KHÔNG gọi search_marketplace nếu user chỉ đang hỏi cách đăng bán hoặc vị trí trang quản lý tin đăng.
+
+KHÔNG chỉ trả về một đường link.
+
+Hãy trả lời tự nhiên, giải thích ngắn gọn quy trình rồi mới chèn link.
+
+Mẫu trả lời phù hợp:
+
+"Bạn hoàn toàn có thể đăng bán tài khoản trên shop nhé 😊
+
+Bạn hãy vào
+<a href="/cho-trao-doi/cua-toi" class="text-neon-pink underline font-semibold">Trang quản lý tin đăng</a>,
+sau đó điền đầy đủ thông tin tài khoản, hình ảnh, giá bán và thông tin liên hệ rồi gửi bài đăng.
+
+Sau khi Admin kiểm duyệt, tin của bạn sẽ được hiển thị trên Chợ trao đổi để người mua có thể xem và liên hệ."
+
+Có thể thay đổi cách diễn đạt cho phù hợp với câu hỏi, nhưng phải bảo đảm:
+- giải thích rõ user cần vào đâu;
+- nói ngắn gọn các bước đăng tin;
+- sử dụng đúng link /cho-trao-doi/cua-toi;
+- không bịa điều kiện, phí, tiền cọc hoặc quy trình chưa được cung cấp;
+- không trả lời quá cụt.
+
+KHÔNG được trả lời kiểu:
+- "Bạn vào Đăng bán acc."
+- "Bạn vào Đăng bán acc để đăng bán acc."
+- "Đăng bán acc tại Đăng bán acc."
+- "Bạn có thể vào Đăng bán acc nhé."
 
 ━━━ NẠP TIỀN / QR / THẺ CÀO ━━━
 Shop hỗ trợ các cách nạp tiền:
@@ -133,6 +268,8 @@ CÁCH DÙNG [CTX]:
 • Nếu thông tin có trong [CTX] → trả lời NGAY, KHÔNG cần gọi tool lại.
 • Nếu [CTX] không có thông tin cần thiết → gọi tool.
 • "thẻ đó", "loại thẻ đó", "mệnh giá đó", "nạp thì được bao nhiêu", "mua thì mất bao nhiêu" → đọc CTX.cardConfigs[0]
+• "phòng đó", "phòng đấu giá đó", "giá hiện tại của phòng đó" → đọc CTX.auctions[0]
+• "tin đó", "tin đăng đó" → đọc CTX.marketplace[0]
 
 ━━━ MÃ ACC / MÃ TÚI MÙ ━━━
 
@@ -173,7 +310,7 @@ CÁCH DÙNG [CTX]:
   "Không tìm thấy tài khoản"
   khi get_account_detail trả về không tồn tại.
 
-  ━━━ TÌM ACC THEO LIÊN KẾT / THÔNG TIN TRẮNG ━━━
+━━━ TÌM ACC THEO LIÊN KẾT / THÔNG TIN TRẮNG ━━━
 Các từ user hay dùng:
 - "acc trắng", "thông tin trắng", "trắng thông tin", "chưa liên kết", "không liên kết", "acc sạch"
   → hiểu là acc không email, không SĐT, không Facebook.
@@ -205,6 +342,37 @@ QUAN TRỌNG:
 - Khi user hỏi vòng quay → gọi get_wheel_info.
 - Khi user hỏi BXH → gọi get_ranking.
 - Khi user tìm acc → gọi search_accounts.
+- Khi user hỏi đấu giá / phòng đấu giá → gọi search_auctions. Hỏi chi tiết một phòng → gọi get_auction_detail.
+- Khi user hỏi xem chợ trao đổi / tìm tin đăng bán acc P2P → gọi search_marketplace.
+- Khi user hỏi chi tiết một tin đăng → gọi get_marketplace_listing_detail.
+- Khi user chỉ hỏi cách đăng bán acc hoặc hỏi trang quản lý tin đăng ở đâu → KHÔNG cần gọi search_marketplace, hãy hướng dẫn và trả đúng link /cho-trao-doi/cua-toi.
+
+━━━ DOMAIN VÀ URL NỘI BỘ ━━━
+- Domain chính thức của shop là https://aovshop.id.vn
+- Trang Chợ trao đổi là:
+  https://aovshop.id.vn/cho-trao-doi
+- Trang đăng bán và quản lý tin của user là:
+  https://aovshop.id.vn/cho-trao-doi/cua-toi
+- Trang chi tiết tin đăng có dạng:
+  https://aovshop.id.vn/cho-trao-doi/{listingId}
+
+- TUYỆT ĐỐI KHÔNG dùng:
+  /marketplace
+  https://aovshop.vn
+  https://aovshop.vn/marketplace
+
+- Ưu tiên đường dẫn tương đối bắt đầu bằng dấu "/", không tự tạo domain khác.
+
+- Khi user hỏi xem chợ trao đổi, chèn link:
+  <a href="/cho-trao-doi" class="text-neon-pink underline font-semibold">Chợ trao đổi</a>
+
+- Khi user hỏi đăng bài bán acc hoặc quản lý tin đăng, chèn link:
+  <a href="/cho-trao-doi/cua-toi" class="text-neon-pink underline font-semibold">Trang quản lý tin đăng</a>
+
+- Link phải được đặt trong một câu trả lời tự nhiên và có hướng dẫn rõ ràng.
+- Không chỉ trả về riêng thẻ <a>.
+- Không sử dụng chính nội dung link để lặp lại câu theo kiểu:
+  "vào Đăng bán acc để đăng bán acc".
 
 ━━━ FORMAT TRẢ LỜI ━━━
 Trả lời tự nhiên, thân thiện. Khi có sản phẩm: ngắn gọn kèm giá.
@@ -309,6 +477,21 @@ function buildCtxBlock(ctx) {
     ctx.lastRankings.slice(0, 3).forEach((r, i) =>
       lines.push(`  ${i + 1}. ${r.username} – ${Number(r.totalDeposit).toLocaleString('vi-VN')}đ`)
     )
+  }
+
+  if (ctx.lastAuctions?.length) {
+    lines.push('auctions:')
+    ctx.lastAuctions.slice(0, 5).forEach(a => {
+      const cur = Number(a.currentPrice ?? a.startingPrice).toLocaleString('vi-VN')
+      lines.push(`  - ${a.title} | ${a.status} | giá hiện tại: ${cur}đ | tổng lượt bid: ${a.totalBids ?? 0}`)
+    })
+  }
+
+  if (ctx.lastMarketplace?.length) {
+    lines.push('marketplace:')
+    ctx.lastMarketplace.slice(0, 5).forEach(m => {
+      lines.push(`  - ${m.title} | ${Number(m.price).toLocaleString('vi-VN')}đ | người bán: ${m.seller || '?'} | fullInfo: ${m.hasFullInfo}`)
+    })
   }
 
   return lines.length > 0 ? `[CTX]\n${lines.join('\n')}\n[/CTX]` : null
@@ -416,6 +599,8 @@ function buildResponseData(toolCallsMade, reply, sessionId) {
     accounts: [], mysteryBoxes: [], wheel: null,
     deposits: [], orders: [], cardPurchases: [],
     rankings: [], accountDetail: null, cardConfigs: [],
+    auctions: [], auctionDetail: null,
+    marketplaceListings: [], marketplaceDetail: null,
   }
 
   for (const tc of toolCallsMade) {
@@ -464,6 +649,26 @@ function buildResponseData(toolCallsMade, reply, sessionId) {
       case 'get_card_config':
         data.intent = 'card_config'
         data.cardConfigs = tc.result?.configs || []
+        break
+      case 'search_auctions':
+        data.intent = 'auctions'
+        data.auctions = tc.result?.auctions || []
+        break
+      case 'get_auction_detail':
+        data.intent = 'auction_detail'
+        if (!tc.result?.error && tc.result?.found !== false) {
+          data.auctionDetail = tc.result
+        }
+        break
+      case 'search_marketplace':
+        data.intent = 'marketplace'
+        data.marketplaceListings = tc.result?.listings || []
+        break
+      case 'get_marketplace_listing_detail':
+        data.intent = 'marketplace_detail'
+        if (!tc.result?.error && tc.result?.found !== false) {
+          data.marketplaceDetail = tc.result
+        }
         break
     }
   }
@@ -734,6 +939,57 @@ function shouldForceAccountDetail(text = '') {
   return {
     accountCode: code,
   }
+}
+
+function normalizeChatLinks(text = '') {
+  return String(text)
+    // Domain sai + route marketplace chi tiết
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.vn\/marketplace\/([^"' )<]+)/gi,
+      '/cho-trao-doi/$1'
+    )
+
+    // Domain sai + route marketplace
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.vn\/marketplace\b/gi,
+      '/cho-trao-doi'
+    )
+
+    // Domain sai nhưng route đã đúng
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.vn\/cho-trao-doi\/([^"' )<]+)/gi,
+      '/cho-trao-doi/$1'
+    )
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.vn\/cho-trao-doi\b/gi,
+      '/cho-trao-doi'
+    )
+
+    // Domain chính xác → đổi thành relative URL
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.id\.vn\/cho-trao-doi\/([^"' )<]+)/gi,
+      '/cho-trao-doi/$1'
+    )
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.id\.vn\/cho-trao-doi\b/gi,
+      '/cho-trao-doi'
+    )
+
+    // Route marketplace thuần
+    .replace(
+      /\/marketplace\/([^"' )<]+)/gi,
+      '/cho-trao-doi/$1'
+    )
+    .replace(
+      /\/marketplace\b/gi,
+      '/cho-trao-doi'
+    )
+
+    // Domain sai còn sót lại
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.vn\b/gi,
+      'https://aovshop.id.vn'
+    )
 }
 
 const sendMessage = async (req, res) => {
@@ -1025,9 +1281,9 @@ if (!forcedAcc && !forcedCard && !forcedWheel && forcedAccountSearch) {
       const textParts = parts.filter(p => p.text)
 
       if (toolParts.length === 0) {
-  finalReply = textParts.map(p => p.text).join('').trim()
-  break
-}
+          finalReply = textParts.map(p => p.text).join('').trim()
+          break
+      }
 
       const results = await Promise.all(
         toolParts.map(async part => {
@@ -1098,6 +1354,7 @@ if (!forcedAcc && !forcedCard && !forcedWheel && forcedAccountSearch) {
       finalReply = fallbackReply(toolCallsMade, userText)
     }
 
+      finalReply = normalizeChatLinks(finalReply)
     /* ── 8. Lưu assistant message ────────────────── */
     await prisma.chatMessage.create({
       data: {

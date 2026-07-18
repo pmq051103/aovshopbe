@@ -46,6 +46,8 @@ Bạn CHỈ hỗ trợ các nội dung liên quan đến:
 - Hỗ trợ mua mã thẻ điện thoại / thẻ game: Viettel, Vinaphone, Mobifone, Garena, Gate...
 - Tư vấn túi mù (mystery box)
 - Tư vấn vòng quay may mắn (lucky wheel)
+- Đấu giá acc: phòng đang mở/sắp diễn ra, giá hiện tại, cách tham gia
+- Chợ trao đổi: tin đăng bán acc P2P giữa các user
 - Các chính sách, quy định, hướng dẫn của shop
 
 Nếu người dùng hỏi ngoài phạm vi trên thì PHẢI trả đúng dạng:
@@ -63,7 +65,9 @@ Nếu người dùng hỏi ngoài phạm vi trên thì PHẢI trả đúng dạn
 5. Hỏi về vòng quay may mắn → intent = "view_wheel"
 6. Hỏi về nạp tiền / số dư / lịch sử nạp / giao dịch thất bại → intent = "deposit_support"
 7. Hỏi về mua thẻ điện thoại / thẻ game / mã thẻ / card → intent = "card_shop_support"
-8. Câu hỏi ngoài lề → redirect sang bộ phận hỗ trợ như mẫu ở trên
+8. Hỏi về đấu giá / phòng đấu giá / acc đang đấu giá → intent = "view_auctions"
+9. Hỏi về chợ trao đổi / tin đăng bán acc P2P / acc ký gửi → intent = "search_marketplace"
+10. Câu hỏi ngoài lề → redirect sang bộ phận hỗ trợ như mẫu ở trên
 
 ━━━ OUTPUT BẮT BUỘC ━━━
 Chỉ trả về JSON thuần, không markdown, không giải thích ngoài JSON.
@@ -149,6 +153,31 @@ cardAction chỉ được là:
 - "guide"
 - "list"
 
+Khi hỏi đấu giá:
+{
+  "intent": "view_auctions",
+  "reply": "câu trả lời thân thiện giới thiệu các phòng đấu giá",
+  "filters": {
+    "status": null,
+    "limit": 8
+  }
+}
+
+status đấu giá chỉ được là: "SCHEDULED" | "ACTIVE" | "ENDED" | null (null = lấy cả sắp diễn ra và đang mở)
+
+Khi hỏi chợ trao đổi:
+{
+  "intent": "search_marketplace",
+  "reply": "câu trả lời thân thiện giới thiệu tin đăng phù hợp",
+  "filters": {
+    "minPrice": null,
+    "maxPrice": null,
+    "hasFullInfo": null,
+    "keyword": null,
+    "limit": 8
+  }
+}
+
 ━━━ QUY TẮC GIÁ ━━━
 - "200k" / "200 nghìn" / "hai trăm k" = 200000
 - "600k" / "sáu trăm k" = 600000
@@ -229,6 +258,41 @@ cardAction chỉ được là:
 - "shop có gì" / "bán gì" → giới thiệu shop bán acc Liên Quân, túi mù, vòng quay và mã thẻ
 - "mua như thế nào" / "cách mua" → hướng dẫn chọn acc → bấm mua → thanh toán
 
+━━━ ĐẤU GIÁ ━━━
+- "đấu giá" / "phòng đấu giá" / "acc đang đấu giá" / "đang bid" / "sắp đấu giá" → view_auctions
+- "sắp diễn ra" / "chuẩn bị đấu giá" → status = "SCHEDULED"
+- "đang diễn ra" / "đang mở" / "đang nhận bid" → status = "ACTIVE"
+- "đã kết thúc" / "ai thắng" / "kết quả đấu giá" → status = "ENDED"
+- Không nói rõ trạng thái → status = null
+
+━━━ CHỢ TRAO ĐỔI ━━━
+- "chợ trao đổi" / "chợ" / "tin đăng bán acc" / "acc người khác bán" / "acc ký gửi"
+  → intent = "search_marketplace".
+
+- "có bind info" / "có liên kết" / "acc full thông tin"
+  → hasFullInfo = true.
+
+- "acc trắng" trong chợ trao đổi
+  → hasFullInfo = false.
+
+- Domain chính thức của shop là https://aovshop.id.vn.
+- Trang xem danh sách Chợ trao đổi: /cho-trao-doi.
+- Trang đăng bán và quản lý tin của user: /cho-trao-doi/cua-toi.
+- Trang chi tiết tin đăng: /cho-trao-doi/{listingId}.
+
+- TUYỆT ĐỐI KHÔNG dùng:
+  /marketplace
+  https://aovshop.vn
+  https://aovshop.vn/marketplace
+
+- Khi user hỏi cách đăng bán acc, up acc bán hoặc quản lý tin đăng, dùng:
+  <a href="/cho-trao-doi/cua-toi" class="text-neon-pink underline font-semibold">Đăng bán acc</a>
+
+- Khi user muốn xem các acc đang được bán trên chợ, dùng:
+  <a href="/cho-trao-doi" class="text-neon-pink underline font-semibold">Chợ trao đổi</a>
+
+- Ưu tiên URL tương đối bắt đầu bằng dấu /, không tự tạo domain khác.
+
 ━━━ LƯU Ý ━━━
 - filters phải null nếu không tìm acc / túi mù / mua thẻ
 - limit mặc định 5, tối đa 10
@@ -286,12 +350,65 @@ function cleanJson(raw = '') {
   return raw.replace(/```json/gi, '').replace(/```/g, '').trim()
 }
 
+function normalizeChatLinks(text = '') {
+  return String(text)
+    // Domain sai + route marketplace chi tiết
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.vn\/marketplace\/([^"' )<]+)/gi,
+      '/cho-trao-doi/$1'
+    )
+
+    // Domain sai + route marketplace
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.vn\/marketplace\b/gi,
+      '/cho-trao-doi'
+    )
+
+    // Domain sai nhưng route đã đúng
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.vn\/cho-trao-doi\/([^"' )<]+)/gi,
+      '/cho-trao-doi/$1'
+    )
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.vn\/cho-trao-doi\b/gi,
+      '/cho-trao-doi'
+    )
+
+    // Domain chính xác → đổi thành relative URL
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.id\.vn\/cho-trao-doi\/([^"' )<]+)/gi,
+      '/cho-trao-doi/$1'
+    )
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.id\.vn\/cho-trao-doi\b/gi,
+      '/cho-trao-doi'
+    )
+
+    // Route marketplace thuần
+    .replace(
+      /\/marketplace\/([^"' )<]+)/gi,
+      '/cho-trao-doi/$1'
+    )
+    .replace(
+      /\/marketplace\b/gi,
+      '/cho-trao-doi'
+    )
+
+    // Domain sai còn sót lại
+    .replace(
+      /https?:\/\/(?:www\.)?aovshop\.vn\b/gi,
+      'https://aovshop.id.vn'
+    )
+}
+
 function safeParseResponse(raw = '') {
   try {
     const parsed = JSON.parse(cleanJson(raw))
     return {
       intent      : parsed.intent       || 'chat',
-      reply       : parsed.reply        || 'Mình đã hiểu yêu cầu của bạn rồi! 😊',
+      reply: normalizeChatLinks(
+        parsed.reply || 'Mình đã hiểu yêu cầu của bạn rồi! 😊'
+      ),
       filters     : parsed.filters      || null,
       depositAction: parsed.depositAction || null,
       cardAction  : parsed.cardAction   || null,
@@ -299,7 +416,9 @@ function safeParseResponse(raw = '') {
   } catch {
     return {
       intent      : 'chat',
-      reply       : raw || 'Xin lỗi, mình chưa hiểu rõ. Bạn nói lại được không? 😅',
+      reply: normalizeChatLinks(
+        raw || 'Xin lỗi, mình chưa hiểu rõ. Bạn nói lại được không? 😅'
+      ),
       filters     : null,
       depositAction: null,
       cardAction  : null,
@@ -557,6 +676,77 @@ async function fetchBuyCards(filters = {}) {
   }
 }
 
+async function fetchAuctions(filters = {}) {
+  try {
+    const status = filters.status ? String(filters.status).trim().toUpperCase() : null
+    const where = status ? { status } : { status: { in: ['SCHEDULED', 'ACTIVE'] } }
+
+    const rooms = await prisma.auctionRoom.findMany({
+      where,
+      orderBy: [{ status: 'asc' }, { scheduledAt: 'asc' }],
+      take: Math.min(filters.limit || 8, 10),
+      include: {
+        gameAccount: {
+          select: { code: true, title: true, rank: true, skins: true, champions: true, thumbnailUrl: true },
+        },
+      },
+    })
+
+    return rooms.map(r => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      thumbnailUrl: r.thumbnailUrl || r.gameAccount?.thumbnailUrl || null,
+      scheduledAt: r.scheduledAt,
+      endsAt: r.endsAt,
+      startingPrice: Number(r.startingPrice),
+      currentPrice: r.currentPrice != null ? Number(r.currentPrice) : Number(r.startingPrice),
+      bidStep: Number(r.bidStep),
+      totalBids: r.totalBids,
+      accountRank: r.gameAccount?.rank || null,
+    }))
+  } catch (err) {
+    logger.error('[Chatbot] fetchAuctions error:', err.message)
+    return []
+  }
+}
+
+async function fetchMarketplace(filters = {}) {
+  try {
+    const where = { status: 'APPROVED' }
+
+    const minPriceVal = parsePrice(filters.minPrice)
+    const maxPriceVal = parsePrice(filters.maxPrice)
+    if (minPriceVal !== null || maxPriceVal !== null) {
+      where.price = {}
+      if (minPriceVal !== null) where.price.gte = minPriceVal
+      if (maxPriceVal !== null) where.price.lte = maxPriceVal
+    }
+    if (filters.hasFullInfo === true) where.hasFullInfo = true
+    if (filters.hasFullInfo === false) where.hasFullInfo = false
+    if (filters.keyword) where.title = { contains: filters.keyword }
+
+    const listings = await prisma.marketplaceListing.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(filters.limit || 8, 10),
+      include: { seller: { select: { username: true, displayName: true } } },
+    })
+
+    return listings.map(l => ({
+      id: l.id,
+      title: l.title,
+      price: Number(l.price),
+      hasFullInfo: l.hasFullInfo,
+      seller: l.seller.displayName || l.seller.username,
+      createdAt: l.createdAt,
+    }))
+  } catch (err) {
+    logger.error('[Chatbot] fetchMarketplace error:', err.message)
+    return []
+  }
+}
+
 /* ─────────────────────────────────────────────────────────
    CONTROLLER CHÍNH
 ───────────────────────────────────────────────────────── */
@@ -691,6 +881,8 @@ const chat = async (req, res) => {
       wheel: null,
       depositInfo: [],
       buyCards: [],
+      auctions: [],
+      marketplaceListings: [],
       _geminiFallback: true,
       _ragContextCount: ragContext.length,
     },
@@ -710,6 +902,8 @@ const chat = async (req, res) => {
     let wheel       = null
     let depositInfo = []
     let buyCards    = []
+    let auctions    = []
+    let marketplaceListings = []
 
     if ((parsed.intent === 'search_acc' || parsed.intent === 'search') && parsed.filters) {
       accounts = await fetchAccounts(parsed.filters)
@@ -723,6 +917,10 @@ const chat = async (req, res) => {
       }
     } else if (parsed.intent === 'card_shop_support') {
       buyCards = await fetchBuyCards(parsed.filters || {})
+    } else if (parsed.intent === 'view_auctions') {
+      auctions = await fetchAuctions(parsed.filters || {})
+    } else if (parsed.intent === 'search_marketplace') {
+      marketplaceListings = await fetchMarketplace(parsed.filters || {})
     }
 
     return res.json({
@@ -738,6 +936,8 @@ const chat = async (req, res) => {
         wheel,
         depositInfo,
         buyCards,
+        auctions,
+        marketplaceListings,
         // Debug: trả về số RAG context tìm được (có thể bỏ ở production)
         _ragContextCount: ragContext.length,
       },

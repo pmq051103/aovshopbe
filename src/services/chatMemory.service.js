@@ -27,6 +27,8 @@
  *   lastMysteryBoxes: array | null
  *   lastWheel   : object | null
  *   lastRankings: array  | null
+ *   lastAuctions: array  | null   — phòng đấu giá vừa tra
+ *   lastMarketplace: array | null — tin đăng chợ trao đổi vừa tra
  *   updatedAt   : number          — timestamp để TTL cleanup
  * }
  * ─────────────────────────────────────────────────────────────────────────
@@ -76,6 +78,8 @@ function getContext(sessionId, userId) {
     lastMysteryBoxes: null,
     lastWheel       : null,
     lastRankings    : null,
+    lastAuctions    : null,
+    lastMarketplace : null,
     updatedAt       : Date.now(),
   }
 
@@ -139,6 +143,26 @@ function updateContextFromToolResults(sessionId, userId, toolCallsMade) {
       case 'get_ranking':
         if (tc.result?.rankings?.length) {
           ctx.lastRankings = tc.result.rankings
+        }
+        break
+      case 'search_auctions':
+        if (tc.result?.auctions?.length) {
+          ctx.lastAuctions = tc.result.auctions
+        }
+        break
+      case 'get_auction_detail':
+        if (tc.result && tc.result.found) {
+          ctx.lastAuctions = [tc.result]
+        }
+        break
+      case 'search_marketplace':
+        if (tc.result?.listings?.length) {
+          ctx.lastMarketplace = tc.result.listings
+        }
+        break
+      case 'get_marketplace_listing_detail':
+        if (tc.result && tc.result.found) {
+          ctx.lastMarketplace = [tc.result]
         }
         break
     }
