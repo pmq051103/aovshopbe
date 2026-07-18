@@ -920,12 +920,14 @@ model Announcement {
 // Cấu hình từng loại thẻ (telco + mệnh giá) do admin quản lý
 model CardConfig {
   id               String   @id @default(uuid())
-  telco            String   @db.VarChar(50)    // VIETTEL, VINAPHONE, ZING, GATE, GARENA ...
+  telco            String   @db.VarChar(50)    // Mã NỘI BỘ để nhóm/hiển thị (VIETTEL, VINAPHONE, ZING, GATE, GARENA ...)
+                                                // KHÔNG được dùng trực tiếp để gọi API đối tác — telco hiển thị có thể
+                                                // không khớp với mã service_code thật của đối tác (vd đối tác đổi
+                                                // VINAPHONE -> VINA, MOBIFONE -> MOBI, VIETNAMOBILE -> VNMOBILE).
   telcoLabel       String?  @db.VarChar(100)   // Tên hiển thị: "Viettel", "Zing Card", "Garena Shell"
-  // Mã service_code THẬT lấy trực tiếp từ NCC (vd: "Vina", "Mobi", "VnMobile" — có thể khác với
-  // tên đầy đủ mình hay nghĩ). Nếu có giá trị này thì lúc mua/kiểm tra tồn kho PHẢI ưu tiên dùng
-  // nó thay vì đoán qua bảng SERVICE_CODE_MAP cứng, tránh gửi sai service_code lên NCC.
-  providerServiceCode String? @db.VarChar(50)
+  serviceCode      String?  @db.VarChar(50)    // Mã service_code THẬT lấy từ API GET /products của đối tác —
+                                                // đây mới là giá trị được gửi đi khi gọi API mua/nạp thẻ.
+                                                // Luôn ưu tiên field này, KHÔNG tự suy ra service_code từ `telco`.
   denomination     Decimal  @db.Decimal(15, 2) // mệnh giá (10000, 50000 ...)
   // Thumbnail gắn theo TELCO (nhóm), không phải từng mệnh giá
   thumbnailUrl     String?  @db.Text           // ảnh đại diện của nhóm telco
@@ -956,6 +958,7 @@ model CardDeposit {
   cardConfigId   String?           // liên kết cấu hình tại thời điểm nạp
   requestId      String            @unique @db.VarChar(100)
   telco          String            @db.VarChar(30)
+  serviceCode    String?           @db.VarChar(50)    // service_code thật đã gửi cho đối tác lúc nạp (audit)
   code           String            @db.VarChar(100)
   serial         String            @db.VarChar(100)
   declaredAmount Decimal           @db.Decimal(15, 2) // mệnh giá user khai báo
@@ -983,6 +986,7 @@ model CardPurchase {
   userId        String
   cardConfigId  String             // cấu hình đã dùng
   telco         String             @db.VarChar(30)
+  serviceCode   String?            @db.VarChar(50)    // service_code thật đã gửi cho đối tác lúc mua (audit)
   denomination  Decimal            @db.Decimal(15, 2)
   buyDiscount   Decimal            @db.Decimal(5, 2)  // % chiết khấu tại thời điểm mua
   unitPrice     Decimal            @db.Decimal(15, 2) // giá 1 thẻ user trả
@@ -1348,9 +1352,7 @@ model Layaway {
   id              String        @id @default(uuid())
   layawayCode     String        @unique @db.VarChar(30)
   userId          String
-  accountId       String        // 1 acc có thể có NHIỀU layaway theo thời gian (VD: cái trước bị hủy,
-                                  // admin trả acc về AVAILABLE, rồi có người đặt cọc mới) — KHÔNG unique.
-                                  // Muốn biết acc có đang bị cọc hay không thì lọc theo status, xem createLayaway.
+  accountId       String       
   totalPrice      Decimal       @db.Decimal(15, 2)
   depositAmount   Decimal       @db.Decimal(15, 2)  // số tiền đặt cọc (VD: 30%)
   depositRate     Decimal       @db.Decimal(5, 2)   // % đặt cọc tại thời điểm tạo
@@ -1371,8 +1373,8 @@ model Layaway {
   payments        LayawayPayment[]
 
   @@index([userId])
-  @@index([status])
   @@index([accountId])
+  @@index([status])
   @@map("layaways")
 }
 
