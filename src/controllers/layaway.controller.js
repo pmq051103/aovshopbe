@@ -311,6 +311,10 @@ const payLayaway = async (req, res) => {
       return updated
     })
 
+    // isFullyPaid được khai báo BÊN TRONG transaction ở trên nên không dùng lại được ở đây —
+    // suy ra lại từ status của kết quả trả về (COMPLETED nghĩa là đã trả đủ).
+    const isFullyPaid = result.status === 'COMPLETED'
+
     // Ghi nhận hoa hồng CTV nếu đơn trả góp đã hoàn tất (trả hết) và người mua được giới thiệu
     if (isFullyPaid) {
       await processReferralPurchase(userId, layaway.totalPrice, result.id)
@@ -318,7 +322,7 @@ const payLayaway = async (req, res) => {
 
     res.json({
       success: true,
-      message: result.status === 'COMPLETED'
+      message: isFullyPaid
         ? 'Thanh toán đủ! Acc đã được bàn giao vào Kho Acc.'
         : 'Thanh toán thành công.',
       data: result,
