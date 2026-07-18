@@ -1,5 +1,6 @@
 const logger = require('./logger')
 const prisma = require('./prisma')
+const { primaryFrontendUrl } = require('./allowedOrigins')
 
 let _cachedLogo = null
 let _logoFetchedAt = 0
@@ -68,7 +69,7 @@ const sendMail = async ({ to, subject, html, text }) => {
 
 const formatMoney = value => `${parseInt(value || 0).toLocaleString('vi-VN')}đ`
 
-const BRAND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
+const BRAND_URL = primaryFrontendUrl
 
 const baseEmail = ({ logo, title, subtitle, badge, content, footerText }) => `
 <!DOCTYPE html>
@@ -204,7 +205,7 @@ const notifyAdminTopupOrder = async ({ order, user, pkg }) => {
 
   const logo = await getSiteLogo()
   const totalQH = Number(pkg.quanHuyAmount || 0) + Number(pkg.bonusQuanHuy || 0)
-  const adminUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin/topup`
+  const adminUrl = `${primaryFrontendUrl}/admin/topup`
 
   const content = `
     <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#344054;text-align:center;">Có một đơn nạp Quân Huy mới đang chờ bạn xác nhận trong Admin Panel.</p>

@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const prisma = require('../config/prisma')
 const { sendResetPasswordEmail, sendVerificationCodeEmail } = require('../config/email')
 const { createReferralOnRegister } = require('../services/affiliate.service')
+const { primaryFrontendUrl } = require('../config/allowedOrigins')
 
 // Sinh mã xác thực 6 chữ số (OTP)
 const generateVerifyCode = () => String(Math.floor(100000 + Math.random() * 900000))
@@ -201,7 +202,7 @@ const forgotPassword = async (req, res) => {
       },
     })
 
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`
+    const resetUrl = `${primaryFrontendUrl}/reset-password/${resetToken}`
 
     const sent = await sendResetPasswordEmail({
       user,

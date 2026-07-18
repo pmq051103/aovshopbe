@@ -2,6 +2,7 @@ const PayOS = require('@payos/node');
 const { emitToUser, emitToAdmins } = require('../config/socket');
 const prisma = require('../config/prisma')
 const { markReferralStep2 } = require('../services/affiliate.service')
+const { primaryFrontendUrl } = require('../config/allowedOrigins')
 
 const payos = new PayOS(
   process.env.PAYOS_CLIENT_ID,
@@ -34,8 +35,8 @@ const createDeposit = async (req, res) => {
     const description = `NAP${shortId}${Date.now().toString().slice(-4)}`;
 
     const expiredAt = new Date(Date.now() + 30 * 60 * 1000);
-    const cancelUrl = `${process.env.FRONTEND_URL}/deposit?status=cancel`;
-    const returnUrl = `${process.env.FRONTEND_URL}/deposit?status=success`;
+    const cancelUrl = `${primaryFrontendUrl}/deposit?status=cancel`;
+    const returnUrl = `${primaryFrontendUrl}/deposit?status=success`;
 
     console.log('[PayOS] Creating payment link, orderCode:', orderCode, 'description:', description);
 
