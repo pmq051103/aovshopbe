@@ -846,7 +846,7 @@ const chat = async (req, res) => {
     const contents    = normalizeMessages(allMessages)
 
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_API_KEY}:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_CHAT_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
       {
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
