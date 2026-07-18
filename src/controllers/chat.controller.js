@@ -15,7 +15,7 @@ const { searchSimilar } = require('../services/pinecone.service')
 const { TOOL_DECLARATIONS, executeTool } = require('../services/chatTools.service')
 const memStore = require('../services/chatMemory.service')
 
-const GEMINI_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-2.5-flash-lite'
+const GEMINI_MODEL = process.env.GEMINI_CHAT_MODEL
 const MAX_TOOL_ITERATIONS = 5
 // Số messages lấy làm history (chỉ lấy từ DB, không tính user msg hiện tại)
 const HISTORY_LIMIT = 18

@@ -13,7 +13,7 @@
 const prisma = require('../config/prisma')
 const logger = require('../config/logger')
 
-const VISION_MODEL = process.env.GEMINI_VISION_MODEL || 'gemini-2.5-flash-lite'
+const VISION_MODEL = process.env.GEMINI_CHAT_MODEL
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 
 function normalize(str) {
