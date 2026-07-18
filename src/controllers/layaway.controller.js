@@ -79,7 +79,13 @@ const createLayaway = async (req, res) => {
       })
     }
 
-    const existingLayaway = await prisma.layaway.findUnique({ where: { accountId } })
+    // Chỉ chặn nếu acc đang có 1 layaway THỰC SỰ còn hoạt động (chưa hủy, chưa hoàn tất).
+    // Trước đây check theo findUnique({accountId}) — vì accountId từng là @unique nên hễ acc có
+    // BẤT KỲ layaway nào trong lịch sử (kể cả đã CANCELLED) là bị chặn vĩnh viễn, dù account.status
+    // đã được admin trả về AVAILABLE. Giờ lọc đúng theo status đang mở.
+    const existingLayaway = await prisma.layaway.findFirst({
+      where: { accountId, status: { in: ['PENDING_DEPOSIT', 'ACTIVE', 'OVERDUE'] } },
+    })
     if (existingLayaway) {
       return res.status(400).json({ success: false, message: 'Tài khoản này đã có người đặt cọc' })
     }
