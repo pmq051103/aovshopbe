@@ -13,6 +13,28 @@ const TYPE_LABEL = {
   REFUND: 'vừa được hoàn tiền',
 }
 
+// Nhiều nghiệp vụ khác nhau (mua acc, mua thẻ, đặt cọc, nạp điện thoại...) đều
+// dùng chung type = 'PURCHASE' trong bảng transaction, nên không thể phân biệt
+// chỉ bằng `type`. Suy ra nhãn chính xác hơn từ nội dung `description` đã lưu
+// lúc tạo transaction ở từng controller.
+function resolveLabel(type, description = '') {
+  if (type === 'PURCHASE') {
+    if (/^mua\s+\d+\s+thẻ/i.test(description) || /\bthẻ\b/i.test(description)) {
+      return 'vừa mua thẻ'
+    }
+    if (/^đặt cọc/i.test(description) || /^thanh toán đặt cọc/i.test(description)) {
+      return 'vừa đặt cọc tài khoản'
+    }
+    if (/nạp tiền điện thoại/i.test(description)) {
+      return 'vừa nạp tiền điện thoại'
+    }
+    if (/^mua acc/i.test(description)) {
+      return 'vừa mua tài khoản'
+    }
+  }
+  return TYPE_LABEL[type] || 'vừa thực hiện giao dịch'
+}
+
 // GET /api/activity/recent — public, không cần auth
 router.get('/recent', async (req, res) => {
   try {
@@ -23,6 +45,7 @@ router.get('/recent', async (req, res) => {
       select: {
         type: true,
         amount: true,
+        description: true,
         createdAt: true,
         user: {
           select: { username: true, displayName: true }
@@ -37,7 +60,7 @@ router.get('/recent', async (req, res) => {
       return {
         username: masked,
         type: t.type,
-        label: TYPE_LABEL[t.type] || 'vừa thực hiện giao dịch',
+        label: resolveLabel(t.type, t.description),
         amount: parseFloat(t.amount),
         createdAt: t.createdAt,
       }
