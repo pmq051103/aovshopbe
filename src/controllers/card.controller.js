@@ -103,7 +103,7 @@ const resolveChargingTelco = config => {
 // Có cache (TTL) để tránh gọi API đối tác trên mỗi lượt nạp thẻ — chỉ dùng để
 // LOG CẢNH BÁO, không chặn/thay đổi luồng nạp thẻ nếu API này lỗi.
 // ══════════════════════════════════════════════════════════════════════════
-const CHARGING_PRICE_URL = process.env.CARD_CHARGING_URL
+const CHARGING_PRICE_URL = process.env.CARD_CHARGING_PRICE_URL
   || `${GT_URL.replace(/\/chargingws\/v2\/?$/, '')}/chargingws/price`
 const CHARGING_PRICE_CACHE_TTL_MS = 1 * 60 * 60 * 1000 // 10 phút
 
