@@ -74,6 +74,52 @@ app.use('/api/', rateLimiter.global)
 
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }))
 
+// ── Sitemap động cho SEO — liệt kê trang tĩnh + acc đang bán + tin tức ──
+app.get('/sitemap.xml', async (req, res) => {
+  const SITE_URL = 'https://aovshop.id.vn'
+  try {
+    const [accounts, news] = await Promise.all([
+      prisma.gameAccount.findMany({
+        where: { status: 'AVAILABLE' },
+        select: { id: true, updatedAt: true },
+        orderBy: { updatedAt: 'desc' },
+        take: 5000,
+      }),
+      prisma.news.findMany({
+        select: { slug: true, updatedAt: true },
+        orderBy: { updatedAt: 'desc' },
+        take: 1000,
+      }).catch(() => []),
+    ])
+
+    const staticUrls = [
+      { loc: '/', priority: '1.0' },
+      { loc: '/shop', priority: '0.9' },
+      { loc: '/ranking', priority: '0.5' },
+      { loc: '/news', priority: '0.6' },
+      { loc: '/mystery-box', priority: '0.6' },
+      { loc: '/lucky-wheel', priority: '0.5' },
+      { loc: '/card-shop', priority: '0.6' },
+      { loc: '/dau-gia', priority: '0.6' },
+      { loc: '/cho-trao-doi', priority: '0.6' },
+    ]
+
+    const urlEntries = [
+      ...staticUrls.map(u => `  <url>\n    <loc>${SITE_URL}${u.loc}</loc>\n    <priority>${u.priority}</priority>\n  </url>`),
+      ...accounts.map(a => `  <url>\n    <loc>${SITE_URL}/shop/acc/${a.id}</loc>\n    <lastmod>${new Date(a.updatedAt).toISOString()}</lastmod>\n    <priority>0.8</priority>\n  </url>`),
+      ...news.map(n => `  <url>\n    <loc>${SITE_URL}/news/${n.slug}</loc>\n    <lastmod>${new Date(n.updatedAt).toISOString()}</lastmod>\n    <priority>0.5</priority>\n  </url>`),
+    ]
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urlEntries.join('\n')}\n</urlset>`
+
+    res.header('Content-Type', 'application/xml')
+    res.send(xml)
+  } catch (err) {
+    logger.error('[Sitemap] error:', err.message)
+    res.status(500).header('Content-Type', 'application/xml').send('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>')
+  }
+})
+
 app.use('/api/auth', authRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/accounts', accountRoutes)
