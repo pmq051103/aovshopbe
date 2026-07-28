@@ -64,6 +64,7 @@ const getDashboardStats = async (req, res) => {
 
       // ── Doanh thu hôm nay theo từng loại ────────────────────────────
       revShopToday,
+      revCardPurchaseToday,
       revMysteryToday,
       revWheelToday,
       revTopupToday,
@@ -71,6 +72,7 @@ const getDashboardStats = async (req, res) => {
 
       // ── Doanh thu trong range theo từng loại ────────────────────────
       revShopRange,
+      revCardPurchaseRange,
       revMysteryRange,
       revWheelRange,
       revTopupRange,
@@ -122,9 +124,15 @@ const getDashboardStats = async (req, res) => {
         _sum: { amount: true }
       }),
 
-      // Shop acc — hôm nay
+      // Shop acc — hôm nay (loại trừ mua thẻ)
       prisma.transaction.aggregate({
-        where: { type: 'PURCHASE', status: 'COMPLETED', amount: { lt: 0 }, createdAt: { gte: startOfDay } },
+        where: { type: 'PURCHASE', status: 'COMPLETED', amount: { lt: 0 }, createdAt: { gte: startOfDay }, NOT: { description: { contains: 'thẻ' } } },
+        _sum: { amount: true }
+      }),
+
+      // Mua thẻ — hôm nay (PURCHASE có description chứa "thẻ")
+      prisma.transaction.aggregate({
+        where: { type: 'PURCHASE', status: 'COMPLETED', amount: { lt: 0 }, createdAt: { gte: startOfDay }, description: { contains: 'thẻ' } },
         _sum: { amount: true }
       }),
 
@@ -152,9 +160,15 @@ const getDashboardStats = async (req, res) => {
         _sum: { receivedAmount: true }
       }).catch(() => ({ _sum: { receivedAmount: 0 } })),
 
-      // Shop acc — range
+      // Shop acc — range (loại trừ mua thẻ)
       prisma.transaction.aggregate({
-        where: { type: 'PURCHASE', status: 'COMPLETED', amount: { lt: 0 }, ...rangeWhere },
+        where: { type: 'PURCHASE', status: 'COMPLETED', amount: { lt: 0 }, ...rangeWhere, NOT: { description: { contains: 'thẻ' } } },
+        _sum: { amount: true }
+      }),
+
+      // Mua thẻ — range (PURCHASE có description chứa "thẻ")
+      prisma.transaction.aggregate({
+        where: { type: 'PURCHASE', status: 'COMPLETED', amount: { lt: 0 }, ...rangeWhere, description: { contains: 'thẻ' } },
         _sum: { amount: true }
       }),
 
@@ -305,22 +319,24 @@ const getDashboardStats = async (req, res) => {
         // Chi tiết doanh thu từng loại hình kinh doanh
         revenueBreakdown: {
           today: {
-            shop:      abs(revShopToday._sum.amount),
-            mysteryBox:abs(revMysteryToday._sum.amount),
-            wheel:     abs(revWheelToday._sum.amount),
-            topup:     abs(revTopupToday._sum.amount),
-            card:      parseFloat(revCardToday._sum.receivedAmount || 0),
-            total:     abs(revShopToday._sum.amount) + abs(revMysteryToday._sum.amount) +
-                       abs(revWheelToday._sum.amount) + abs(revTopupToday._sum.amount)
+            shop:        abs(revShopToday._sum.amount),
+            cardPurchase:abs(revCardPurchaseToday._sum.amount),
+            mysteryBox:  abs(revMysteryToday._sum.amount),
+            wheel:       abs(revWheelToday._sum.amount),
+            topup:       abs(revTopupToday._sum.amount),
+            card:        parseFloat(revCardToday._sum.receivedAmount || 0),
+            total:       abs(revShopToday._sum.amount) + abs(revCardPurchaseToday._sum.amount) + abs(revMysteryToday._sum.amount) +
+                         abs(revWheelToday._sum.amount) + abs(revTopupToday._sum.amount)
           },
           range: {
-            shop:      abs(revShopRange._sum.amount),
-            mysteryBox:abs(revMysteryRange._sum.amount),
-            wheel:     abs(revWheelRange._sum.amount),
-            topup:     abs(revTopupRange._sum.amount),
-            card:      parseFloat(revCardRange._sum.receivedAmount || 0),
-            total:     abs(revShopRange._sum.amount) + abs(revMysteryRange._sum.amount) +
-                       abs(revWheelRange._sum.amount) + abs(revTopupRange._sum.amount)
+            shop:        abs(revShopRange._sum.amount),
+            cardPurchase:abs(revCardPurchaseRange._sum.amount),
+            mysteryBox:  abs(revMysteryRange._sum.amount),
+            wheel:       abs(revWheelRange._sum.amount),
+            topup:       abs(revTopupRange._sum.amount),
+            card:        parseFloat(revCardRange._sum.receivedAmount || 0),
+            total:       abs(revShopRange._sum.amount) + abs(revCardPurchaseRange._sum.amount) + abs(revMysteryRange._sum.amount) +
+                         abs(revWheelRange._sum.amount) + abs(revTopupRange._sum.amount)
           }
         },
 
