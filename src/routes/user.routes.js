@@ -56,12 +56,26 @@ router.put('/change-password', protect, async (req, res) => {
 
 router.get('/transactions', protect, async (req, res) => {
   try {
-    const { page = 1, limit = 10, type, fromDate, toDate } = req.query
+    const { page = 1, limit = 10, type, fromDate, toDate, purchaseKind } = req.query
 
     const where = { userId: req.user.id }
 
     if (type) {
       where.type = type
+    }
+
+    // Lọc con của PURCHASE theo `description` (mua acc/thẻ/chợ trao đổi/điện thoại/đặt cọc).
+    // Vì nhiều nghiệp vụ dùng chung type='PURCHASE', chỉ khác description khi tạo transaction.
+    if (purchaseKind) {
+      where.type = 'PURCHASE'
+      const KIND_DESC = {
+        card:    { contains: 'thẻ' },
+        market:  { contains: 'chợ trao đổi' },
+        phone:   { contains: 'điện thoại' },
+        layaway: { contains: 'đặt cọc' },
+        account: { startsWith: 'Mua acc' },
+      }
+      if (KIND_DESC[purchaseKind]) where.description = KIND_DESC[purchaseKind]
     }
 
     if (fromDate || toDate) {
