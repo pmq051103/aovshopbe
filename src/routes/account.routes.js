@@ -15,7 +15,9 @@ const {
 const { protect, adminOnly, optionalAuth } = require('../middleware/authMiddleware')
 const { uploadAccountImages } = require('../config/cloudinary')
 
-router.get('/', getAccounts)
+// optionalAuth: route vẫn công khai, nhưng nếu có token hợp lệ thì backend biết
+// người gọi là ADMIN -> mới cho xem acc đã bán/đang ẩn và dùng status=ALL.
+router.get('/', optionalAuth, getAccounts)
 router.get('/filters', getFilters)
 
 router.post(
