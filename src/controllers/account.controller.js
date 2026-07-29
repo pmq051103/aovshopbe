@@ -27,12 +27,27 @@ const getAccounts = async (req, res) => {
       hasEmail,
       hasPhone,
       blankInfo,
+      accInfo,
     } = req.query
 
     const skip = (parseInt(page) - 1) * parseInt(limit)
 
-    const where = {
-      status: status.toUpperCase(),
+    // ── Trạng thái ────────────────────────────────────────────────────────────
+    // Chỉ ADMIN được xem acc đã bán / đang ẩn, và được dùng status=ALL để xem hết.
+    // Khách/user thường LUÔN chỉ thấy acc AVAILABLE — trước đây ai cũng có thể
+    // gọi ?status=HIDDEN để xem acc đang ẩn.
+    const isAdmin = req.user?.role === 'ADMIN'
+    const requestedStatus = String(status || 'AVAILABLE').toUpperCase()
+
+    const where = {}
+
+    if (isAdmin) {
+      // ALL (hoặc rỗng) = không giới hạn trạng thái
+      if (requestedStatus && requestedStatus !== 'ALL') {
+        where.status = requestedStatus
+      }
+    } else {
+      where.status = 'AVAILABLE'
     }
 
     if (rank) where.rank = rank
@@ -102,6 +117,34 @@ const getAccounts = async (req, res) => {
     if (blankInfo === 'true') {
       where.gameBindEmail = null
       where.gameBindPhone = null
+    }
+
+    // Bộ lọc gộp "thông tin acc" mà trang admin đang dùng (?accInfo=...).
+    // Trước đây backend không đọc tham số này nên bộ lọc chọn gì cũng như nhau.
+    switch (accInfo) {
+      case 'email':
+        where.gameBindEmail = { not: null }
+        break
+      case 'phone':
+        // "Mỗi số điện thoại" = có SĐT nhưng KHÔNG có email
+        where.gameBindPhone = { not: null }
+        where.gameBindEmail = null
+        break
+      case 'blank':
+        where.gameBindEmail = null
+        where.gameBindPhone = null
+        break
+      case 'fb_live':
+        where.gameBindFacebook = 'LIVE'
+        break
+      case 'fb_rip':
+        where.gameBindFacebook = 'RIP'
+        break
+      case 'fb_none':
+        where.gameBindFacebook = 'NONE'
+        break
+      default:
+        break
     }
 
     if (gameBindFacebook) {
