@@ -133,19 +133,40 @@ const validateCoupon = async (req, res) => {
 
 const adminGetCoupons = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search } = req.query
+    const { page = 1, limit = 10, search, status } = req.query
 
     const currentPage = parseInt(page)
     const pageSize = parseInt(limit)
 
-    const where = search
-      ? {
-          OR: [
-            { code: { contains: search } },
-            { name: { contains: search } }
-          ]
-        }
-      : {}
+    const andConds = []
+
+    if (search) {
+      andConds.push({
+        OR: [
+          { code: { contains: search } },
+          { name: { contains: search } }
+        ]
+      })
+    }
+
+    // Lọc theo trạng thái (tính theo thời điểm hiện tại + isActive).
+    const now = new Date()
+    if (status === 'active') {
+      andConds.push({ isActive: true })
+      andConds.push({ OR: [{ startDate: null }, { startDate: { lte: now } }] })
+      andConds.push({ OR: [{ endDate: null }, { endDate: { gte: now } }] })
+    } else if (status === 'scheduled') {
+      // Chưa mở: còn bật nhưng ngày bắt đầu ở tương lai
+      andConds.push({ isActive: true })
+      andConds.push({ startDate: { gt: now } })
+    } else if (status === 'expired') {
+      // Hết hạn: đã qua ngày kết thúc
+      andConds.push({ endDate: { lt: now } })
+    } else if (status === 'disabled') {
+      andConds.push({ isActive: false })
+    }
+
+    const where = andConds.length ? { AND: andConds } : {}
 
     const [coupons, total] = await Promise.all([
       prisma.coupon.findMany({
