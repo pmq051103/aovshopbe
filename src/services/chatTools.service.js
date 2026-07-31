@@ -19,7 +19,7 @@ const PHONE_TELCOS = ['VIETTEL', 'VINAPHONE', 'MOBIFONE', 'VIETNAMOBILE', 'GMOBI
 const TOOL_DECLARATIONS = [
   {
     name: 'search_accounts',
-    description: 'Tìm kiếm acc Liên Quân Mobile trong shop theo các tiêu chí: giá, rank, số skin, số tướng, server, liên kết. Gọi khi user muốn tìm/xem/mua acc. Hỗ trợ acc trắng/chưa liên kết/chỉ SĐT/chỉ email.',
+    description: 'Tìm kiếm acc Liên Quân Mobile trong shop theo các tiêu chí: giá, rank, số skin, số tướng, server, liên kết, và theo TÊN TƯỚNG hoặc TÊN SKIN. Gọi khi user muốn tìm/xem/mua acc. Nếu user nói "acc có skin/tướng <tên>" (vd: "skin Triệu Vân", "tướng Murad") thì truyền tên đó vào heroName (nếu là tên tướng) hoặc skinName (nếu là tên skin cụ thể) — có thể truyền cả 2. Hỗ trợ acc trắng/chưa liên kết/chỉ SĐT/chỉ email.',
     parameters: {
       type: 'object',
       properties: {
@@ -29,7 +29,8 @@ const TOOL_DECLARATIONS = [
         minSkins: { type: 'number', description: 'Số skin tối thiểu' },
         maxSkins: { type: 'number', description: 'Số skin tối đa' },
         minChampions: { type: 'number', description: 'Số tướng tối thiểu' },
-        skinName: { type: 'string', description: 'Tên skin cụ thể cần tìm' },
+        skinName: { type: 'string', description: 'Tên SKIN cụ thể cần tìm (vd: "Nguyệt Quang", "Quan Vũ Tinh Anh"). Nếu chỉ biết tên tướng thì dùng heroName.' },
+        heroName: { type: 'string', description: 'Tên TƯỚNG cần tìm (vd: "Triệu Vân", "Murad", "Lôi"). Tìm acc có bất kỳ skin nào của tướng này.' },
         server: { type: 'string', description: 'Server acc' },
         gameBindFacebook: { type: 'string', description: 'Trạng thái liên kết FB: LIVE|RIP|NONE. NONE nghĩa là không liên kết Facebook' },
         hasEmail: { type: 'boolean', description: 'Có liên kết email không. false nghĩa là không có email' },
@@ -200,6 +201,7 @@ async function execSearchAccounts(args) {
       maxSkins,
       minChampions,
       skinName,
+      heroName,
       server,
       gameBindFacebook,
       hasEmail,
@@ -334,13 +336,23 @@ async function execSearchAccounts(args) {
       }
     }
 
-    if (skinName) {
+    // Tìm theo skin/tướng: khớp CẢ skinName LẪN heroName vì user (và AI) hay lẫn
+    // giữa tên tướng và tên skin. Vd "skin Triệu Vân" — Triệu Vân là TƯỚNG, các skin
+    // của nó có tên khác (Nguyệt Quang...), nên nếu chỉ tìm skinName sẽ bị sót/sai.
+    const skinKw = skinName ? String(skinName).trim() : ''
+    const heroKw = heroName ? String(heroName).trim() : ''
+    const skinConds = []
+    if (skinKw) {
+      skinConds.push({ skinName: { contains: skinKw } })
+      skinConds.push({ heroName: { contains: skinKw } })
+    }
+    if (heroKw && heroKw.toLowerCase() !== skinKw.toLowerCase()) {
+      skinConds.push({ heroName: { contains: heroKw } })
+      skinConds.push({ skinName: { contains: heroKw } })
+    }
+    if (skinConds.length) {
       where.skins_rel = {
-        some: {
-          skinName: {
-            contains: skinName,
-          },
-        },
+        some: { OR: skinConds },
       }
     }
 
@@ -378,6 +390,16 @@ async function execSearchAccounts(args) {
         gameBindEmail: true,
         gameBindPhone: true,
         gameBindFacebook: true,
+        // Khi tìm theo skin/tướng: lấy kèm các skin KHỚP để AI xác nhận đúng acc
+        ...(skinConds.length
+          ? {
+              skins_rel: {
+                where: { OR: skinConds },
+                select: { skinName: true, heroName: true },
+                take: 8,
+              },
+            }
+          : {}),
       },
     })
 
@@ -399,6 +421,14 @@ async function execSearchAccounts(args) {
         gameBindFacebook: a.gameBindFacebook,
         hasEmail: !!a.gameBindEmail,
         hasPhone: !!a.gameBindPhone,
+        // Danh sách skin khớp với từ khoá tìm (nếu có) — giúp AI nói đúng tên skin
+        ...(a.skins_rel
+          ? {
+              matchedSkins: a.skins_rel.map(s =>
+                s.heroName ? `${s.skinName} (${s.heroName})` : s.skinName
+              ),
+            }
+          : {}),
       })),
     }
   } catch (err) {
