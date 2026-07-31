@@ -92,6 +92,7 @@ Khi tìm acc:
     "minChampions": null,
     "maxChampions": null,
     "skinName": null,
+    "heroName": null,
     "sort": null,
     "featured": false,
     "hasEmail": false,
@@ -204,7 +205,8 @@ Khi hỏi chợ trao đổi:
 - "nhiều skin" → sort = "skins_desc"
 - "ít nhất X skin" / "X skin trở lên" → minSkins = X
 - "nhiều tướng" → sort = "champions_desc"
-- "có skin [tên]" / "skin [tên]" → skinName = "[tên]"
+- "có skin [tên skin]" / "skin [tên skin]" → skinName = "[tên]"
+- "có tướng [tên]" / "tướng [tên]" / "skin của [tên tướng]" (vd: Triệu Vân, Murad, Lôi) → heroName = "[tên]"
 
 ━━━ THÔNG TIN LIÊN KẾT ACC ━━━
 - "có mail" / "có email" / "mail trắng" → hasEmail = true
@@ -497,8 +499,22 @@ async function fetchAccounts(filters) {
     if (filters.gameBindFacebook) {
       where.gameBindFacebook = String(filters.gameBindFacebook).toUpperCase()
     }
-    if (filters.skinName) {
-      where.skins_rel = { some: { skinName: { contains: filters.skinName } } }
+    // Tìm theo skin/tướng: khớp CẢ skinName LẪN heroName. User hay nói tên TƯỚNG
+    // ("skin Triệu Vân") trong khi tên skin thực tế lại khác (Nguyệt Quang...),
+    // nên nếu chỉ dò skinName sẽ ra sai/lung tung.
+    const _skinKw = filters.skinName ? String(filters.skinName).trim() : ''
+    const _heroKw = filters.heroName ? String(filters.heroName).trim() : ''
+    const _skinConds = []
+    if (_skinKw) {
+      _skinConds.push({ skinName: { contains: _skinKw } })
+      _skinConds.push({ heroName: { contains: _skinKw } })
+    }
+    if (_heroKw && _heroKw.toLowerCase() !== _skinKw.toLowerCase()) {
+      _skinConds.push({ heroName: { contains: _heroKw } })
+      _skinConds.push({ skinName: { contains: _heroKw } })
+    }
+    if (_skinConds.length) {
+      where.skins_rel = { some: { OR: _skinConds } }
     }
 
     const orderByMap = {
@@ -519,6 +535,15 @@ async function fetchAccounts(filters) {
         id: true, title: true, rank: true, price: true,
         skins: true, champions: true, thumbnailUrl: true,
         isFeatured: true, gameBindEmail: true, gameBindPhone: true, gameBindFacebook: true,
+        ...(_skinConds.length
+          ? {
+              skins_rel: {
+                where: { OR: _skinConds },
+                select: { skinName: true, heroName: true },
+                take: 8,
+              },
+            }
+          : {}),
       },
     })
 
@@ -536,6 +561,13 @@ async function fetchAccounts(filters) {
       hasBindPhone    : !!a.gameBindPhone,
       gameBindFacebook: a.gameBindFacebook || 'NONE',
       facebookLabel   : getFacebookLabel(a.gameBindFacebook),
+      ...(a.skins_rel
+        ? {
+            matchedSkins: a.skins_rel.map(s =>
+              s.heroName ? `${s.skinName} (${s.heroName})` : s.skinName
+            ),
+          }
+        : {}),
     }))
   } catch (err) {
     logger.error('[Chatbot] fetchAccounts error:', err.message)
@@ -762,6 +794,7 @@ function buildFallbackFiltersFromText(text = '') {
     minChampions: null,
     maxChampions: null,
     skinName: null,
+    heroName: null,
     sort: null,
     featured: false,
     hasEmail: false,
