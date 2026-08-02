@@ -24,6 +24,14 @@ const { searchSimilar } = require('../services/pinecone.service')
 
 const PHONE_TELCOS = ['VIETTEL', 'VINAPHONE', 'MOBIFONE', 'VIETNAMOBILE', 'GMOBILE', 'REDDI']
 
+// Phân loại thẻ ĐIỆN THOẠI theo TỪ KHOÁ trên mã/label (giống FE), vì mã telco do admin
+// tự đặt có thể khác danh sách cứng -> nếu so khớp mã chính xác sẽ tính nhầm thẻ ĐT thành game.
+const PHONE_KEYWORDS = ['viettel', 'vinaphone', 'mobifone', 'vietnamobile', 'vietnam mobile', 'gmobile', 'reddi', 'itelecom', 'wintel', 'vina', 'mobi', 'vnmobile']
+const isPhoneTelco = (telco = '', telcoLabel = '') => {
+  const s = `${telcoLabel || ''} ${telco || ''}`.toLowerCase()
+  return PHONE_KEYWORDS.some(kw => s.includes(kw))
+}
+
 /* ─────────────────────────────────────────────────────────
    SYSTEM PROMPT BASE (không thay đổi)
    Context RAG sẽ được inject vào trước mỗi request
@@ -685,9 +693,6 @@ async function fetchBuyCards(filters = {}) {
   try {
     const f = normalizeCardFilters(filters)
     const where = { buyEnabled: true }
-    if (f.telco)          { where.telco = f.telco }
-    else if (f.type === 'PHONE') { where.telco = { in: PHONE_TELCOS } }
-    else if (f.type === 'GAME')  { where.telco = { notIn: PHONE_TELCOS } }
 
     const minPriceVal = parsePrice(f.minPrice)
     const maxPriceVal = parsePrice(f.maxPrice)
@@ -697,12 +702,23 @@ async function fetchBuyCards(filters = {}) {
       if (maxPriceVal !== null) where.denomination.lte = maxPriceVal
     }
 
-    const cards = await prisma.cardConfig.findMany({
+    // Lấy dư rồi lọc loại thẻ phía JS bằng TỪ KHOÁ (mã telco admin đặt không chuẩn).
+    let cards = await prisma.cardConfig.findMany({
       where,
       orderBy: [{ sortOrder: 'asc' }, { telco: 'asc' }, { denomination: 'asc' }],
-      take   : Math.min(f.limit || 8, 12),
+      take   : 80,
       select : { id: true, telco: true, telcoLabel: true, denomination: true, buyEnabled: true, buyDiscount: true, thumbnailUrl: true },
     })
+
+    if (f.telco) {
+      const kw = String(f.telco).toLowerCase()
+      cards = cards.filter(c => `${c.telcoLabel || ''} ${c.telco || ''}`.toLowerCase().includes(kw))
+    } else if (f.type === 'PHONE') {
+      cards = cards.filter(c => isPhoneTelco(c.telco, c.telcoLabel))
+    } else if (f.type === 'GAME') {
+      cards = cards.filter(c => !isPhoneTelco(c.telco, c.telcoLabel))
+    }
+    cards = cards.slice(0, Math.min(f.limit || 8, 12))
 
     return cards.map(c => {
       const denomination = Number(c.denomination)
@@ -712,7 +728,7 @@ async function fetchBuyCards(filters = {}) {
         id         : c.id,
         telco      : c.telco,
         telcoLabel : c.telcoLabel || c.telco,
-        type       : PHONE_TELCOS.includes(c.telco) ? 'PHONE' : 'GAME',
+        type       : isPhoneTelco(c.telco, c.telcoLabel) ? 'PHONE' : 'GAME',
         denomination,
         buyDiscount,
         price,
@@ -743,7 +759,7 @@ async function buildCardCatalogNote() {
       const key = label.toLowerCase()
       if (seen.has(key)) continue
       seen.add(key)
-      ;(PHONE_TELCOS.includes(c.telco) ? phone : game).push(label)
+      ;(isPhoneTelco(c.telco, c.telcoLabel) ? phone : game).push(label)
     }
     if (!phone.length && !game.length) return ''
     const parts = []

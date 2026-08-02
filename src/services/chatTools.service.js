@@ -13,6 +13,14 @@ const logger = require('../config/logger')
 
 const PHONE_TELCOS = ['VIETTEL', 'VINAPHONE', 'MOBIFONE', 'VIETNAMOBILE', 'GMOBILE', 'REDDI']
 
+// Phân loại thẻ ĐIỆN THOẠI theo TỪ KHOÁ (mã telco admin đặt không chuẩn nên không
+// thể so khớp chính xác) — nhất quán với cách FE phân loại.
+const PHONE_KEYWORDS = ['viettel', 'vinaphone', 'mobifone', 'vietnamobile', 'vietnam mobile', 'gmobile', 'reddi', 'itelecom', 'wintel', 'vina', 'mobi', 'vnmobile']
+const isPhoneTelco = (telco = '', telcoLabel = '') => {
+  const s = `${telcoLabel || ''} ${telco || ''}`.toLowerCase()
+  return PHONE_KEYWORDS.some(kw => s.includes(kw))
+}
+
 /* ══════════════════════════════════════════════════════════
    TOOL DEFINITIONS — Gemini Function Calling format
    ══════════════════════════════════════════════════════════ */
@@ -748,7 +756,7 @@ async function execGetCardConfig(args = {}) {
       telcos.push({
         telco: c.telco,
         telcoLabel: label,
-        type: PHONE_TELCOS.includes(c.telco) ? 'Điện thoại' : 'Game',
+        type: isPhoneTelco(c.telco, c.telcoLabel) ? 'Điện thoại' : 'Game',
       })
     }
 
@@ -766,7 +774,7 @@ async function execGetCardConfig(args = {}) {
           id: c.id,
           telco: c.telco,
           telcoLabel: c.telcoLabel || c.telco,
-          type: PHONE_TELCOS.includes(c.telco) ? 'Điện thoại' : 'Game',
+          type: isPhoneTelco(c.telco, c.telcoLabel) ? 'Điện thoại' : 'Game',
           denomination: denom,
 
           depositEnabled: c.depositEnabled,
@@ -892,7 +900,7 @@ async function execGetCardPurchaseHistory(userId, args) {
       purchases: purchases.map(p => ({
         id: p.id,
         telco: p.telco,
-        type: PHONE_TELCOS.includes(p.telco) ? 'Điện thoại' : 'Game',
+        type: isPhoneTelco(p.telco, p.telcoLabel) ? 'Điện thoại' : 'Game',
         denomination: Number(p.denomination),
         quantity: p.quantity,
         totalPrice: Number(p.totalPrice),
