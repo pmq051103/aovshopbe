@@ -117,7 +117,7 @@ const TOOL_DECLARATIONS = [
   {
     name: 'get_card_config',
     description:
-      'Lấy cấu hình chiết khấu thẻ cào theo loại thẻ và mệnh giá. Gọi khi user hỏi nạp thẻ/mua thẻ có chiết khấu không, nhận bao nhiêu, giá bao nhiêu.',
+      'Lấy DANH SÁCH các loại thẻ shop bán/nạp và cấu hình chiết khấu theo loại thẻ & mệnh giá. Gọi khi user hỏi: shop bán/nạp những thẻ gì, có loại thẻ nào, hoặc nạp/mua thẻ có chiết khấu không, nhận/giá bao nhiêu. Bỏ trống telco để lấy toàn bộ loại thẻ đang có (đọc trường "telcos").',
     parameters: {
       type: 'object',
       properties: {
@@ -737,9 +737,26 @@ async function execGetCardConfig(args = {}) {
       }
     }
 
+    // Danh sách loại thẻ (telco) phân biệt trùng — để AI liệt kê đúng "shop bán thẻ gì".
+    const telcoSeen = new Set()
+    const telcos = []
+    for (const c of configs) {
+      const label = c.telcoLabel || c.telco
+      const key = label.toLowerCase()
+      if (telcoSeen.has(key)) continue
+      telcoSeen.add(key)
+      telcos.push({
+        telco: c.telco,
+        telcoLabel: label,
+        type: PHONE_TELCOS.includes(c.telco) ? 'Điện thoại' : 'Game',
+      })
+    }
+
     return {
       found: true,
       count: configs.length,
+      telcos,
+      cardShopUrl: '/card-shop',
       configs: configs.map(c => {
         const denom = Number(c.denomination)
         const depositDiscount = Number(c.depositDiscount || 0)

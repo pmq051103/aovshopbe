@@ -43,7 +43,7 @@ Bạn CHỈ hỗ trợ các nội dung liên quan đến:
 - Cách mua acc, thanh toán, nạp tiền
 - Hỗ trợ tài khoản, đơn hàng, vấn đề khi mua acc
 - Hỗ trợ nạp tiền: hướng dẫn nạp, kiểm tra lịch sử nạp, trạng thái giao dịch, xử lý sự cố
-- Hỗ trợ mua mã thẻ điện thoại / thẻ game: Viettel, Vinaphone, Mobifone, Garena, Gate...
+- Hỗ trợ mua mã thẻ điện thoại / thẻ game (shop bán NHIỀU loại; ví dụ Viettel, Vinaphone, Mobifone, Garena, Gate... nhưng KHÔNG tự liệt kê từ trí nhớ — danh sách thẻ thực tế do hệ thống cung cấp kèm theo, phải dựa vào đó)
 - Tư vấn túi mù (mystery box)
 - Tư vấn vòng quay may mắn (lucky wheel)
 - Đấu giá acc: phòng đang mở/sắp diễn ra, giá hiện tại, cách tham gia
@@ -293,7 +293,16 @@ Khi hỏi chợ trao đổi:
 - Khi user muốn xem các acc đang được bán trên chợ, dùng:
   <a href="/cho-trao-doi" class="text-neon-pink underline font-semibold">Chợ trao đổi</a>
 
+- Trang MUA / NẠP thẻ điện thoại & thẻ game: /card-shop. Khi user hỏi mua thẻ, nạp thẻ,
+  shop bán thẻ gì, giá/chiết khấu thẻ... LUÔN chèn link:
+  <a href="/card-shop" class="text-neon-pink underline font-semibold">Mua thẻ</a>
+- Trang nạp Quân Huy vào game: /topup →
+  <a href="/topup" class="text-neon-pink underline font-semibold">Nạp Quân Huy</a>
+- Trang nạp tiền vào ví shop (QR ngân hàng): /deposit →
+  <a href="/deposit" class="text-neon-pink underline font-semibold">Nạp tiền</a>
+
 - Ưu tiên URL tương đối bắt đầu bằng dấu /, không tự tạo domain khác.
+- ĐỊNH DẠNG: in đậm bằng thẻ HTML <strong>...</strong>, KHÔNG dùng markdown **...** (web hiện nguyên dấu sao).
 
 ━━━ LƯU Ý ━━━
 - filters phải null nếu không tìm acc / túi mù / mua thẻ
@@ -350,6 +359,15 @@ function normalizeMessages(messages = []) {
 
 function cleanJson(raw = '') {
   return raw.replace(/```json/gi, '').replace(/```/g, '').trim()
+}
+
+// Đổi markdown in đậm -> HTML vì reply được render bằng HTML (dangerouslySetInnerHTML).
+// Nếu để **...** thì trên web hiện nguyên dấu sao. Xử lý server cho chắc.
+function mdToHtml(text = '') {
+  if (!text) return text
+  return String(text)
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
 }
 
 function normalizeChatLinks(text = '') {
@@ -708,6 +726,36 @@ async function fetchBuyCards(filters = {}) {
   }
 }
 
+// Danh sách loại thẻ shop ĐANG bán/nạp — lấy trực tiếp từ DB để câu trả lời luôn
+// đúng thực tế (không để AI tự liệt kê theo trí nhớ) + luôn kèm link /card-shop.
+async function buildCardCatalogNote() {
+  try {
+    const configs = await prisma.cardConfig.findMany({
+      where: { OR: [{ buyEnabled: true }, { depositEnabled: true }] },
+      select: { telco: true, telcoLabel: true, sortOrder: true },
+      orderBy: [{ sortOrder: 'asc' }, { telco: 'asc' }],
+    })
+    const seen = new Set()
+    const phone = []
+    const game = []
+    for (const c of configs) {
+      const label = c.telcoLabel || c.telco
+      const key = label.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      ;(PHONE_TELCOS.includes(c.telco) ? phone : game).push(label)
+    }
+    if (!phone.length && !game.length) return ''
+    const parts = []
+    if (phone.length) parts.push(`thẻ điện thoại (${phone.join(', ')})`)
+    if (game.length) parts.push(`thẻ game (${game.join(', ')})`)
+    return `Shop hiện có ${parts.join(' và ')}. Xem & mua tại <a href="/card-shop" class="text-neon-pink underline font-semibold">Mua thẻ</a> 🎴`
+  } catch (err) {
+    logger.error('[Chatbot] buildCardCatalogNote error:', err.message)
+    return ''
+  }
+}
+
 async function fetchAuctions(filters = {}) {
   try {
     const status = filters.status ? String(filters.status).trim().toUpperCase() : null
@@ -951,6 +999,10 @@ const chat = async (req, res) => {
       }
     } else if (parsed.intent === 'card_shop_support') {
       buyCards = await fetchBuyCards(parsed.filters || {})
+      // Ghép danh sách thẻ thật + link /card-shop vào câu trả lời (bất kể LLM viết gì),
+      // để không còn tình trạng "chỉ nói mấy thẻ cơ bản" và thiếu link.
+      const note = await buildCardCatalogNote()
+      if (note) parsed.reply = `${parsed.reply || ''}\n\n${note}`.trim()
     } else if (parsed.intent === 'view_auctions') {
       auctions = await fetchAuctions(parsed.filters || {})
     } else if (parsed.intent === 'search_marketplace') {
@@ -961,7 +1013,7 @@ const chat = async (req, res) => {
       success: true,
       data   : {
         intent      : parsed.intent,
-        reply       : parsed.reply,
+        reply       : mdToHtml(normalizeChatLinks(parsed.reply || '')),
         filters     : parsed.filters,
         depositAction: parsed.depositAction || null,
         cardAction  : parsed.cardAction    || null,

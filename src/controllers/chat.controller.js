@@ -369,8 +369,22 @@ QUAN TRỌNG:
 - Khi user hỏi đăng bài bán acc hoặc quản lý tin đăng, chèn link:
   <a href="/cho-trao-doi/cua-toi" class="text-neon-pink underline font-semibold">Trang quản lý tin đăng</a>
 
+- Trang MUA / NẠP thẻ điện thoại & thẻ game là /card-shop. Khi user hỏi mua thẻ, nạp thẻ,
+  "shop bán thẻ gì", giá/chiết khấu thẻ... hãy tư vấn rồi chèn link:
+  <a href="/card-shop" class="text-neon-pink underline font-semibold">Mua thẻ</a>
+- Trang nạp Quân Huy vào game là /topup:
+  <a href="/topup" class="text-neon-pink underline font-semibold">Nạp Quân Huy</a>
+- Trang nạp tiền vào ví shop (QR ngân hàng) là /deposit:
+  <a href="/deposit" class="text-neon-pink underline font-semibold">Nạp tiền</a>
+- Trang đấu giá là /dau-gia, Vòng quay /lucky-wheel, Túi mù /mystery-box, Shop acc /shop, Bảng xếp hạng /ranking.
+
+- QUAN TRỌNG về thẻ: KHÔNG tự liệt kê loại thẻ theo trí nhớ. Khi user hỏi "shop bán/nạp
+  những thẻ gì", hãy GỌI get_card_config (không cần telco) rồi liệt kê đúng theo trường
+  "telcos" trả về, kèm link /card-shop.
+
 - Link phải được đặt trong một câu trả lời tự nhiên và có hướng dẫn rõ ràng.
 - Không chỉ trả về riêng thẻ <a>.
+- ĐỊNH DẠNG: để in đậm hãy dùng thẻ HTML <strong>...</strong>, TUYỆT ĐỐI KHÔNG dùng markdown **...** (sẽ hiện nguyên dấu sao trên web).
 - Không sử dụng chính nội dung link để lặp lại câu theo kiểu:
   "vào Đăng bán acc để đăng bán acc".
 
@@ -592,10 +606,20 @@ function normalizeAcc(acc) {
   }
 }
 
+/* ── Markdown in đậm -> HTML ──────────────────────────
+   Reply được FE render bằng HTML (dangerouslySetInnerHTML), nên markdown **...**
+   sẽ hiện nguyên dấu sao. Đổi sang <strong> ở server cho chắc, bất kể model xuất gì. */
+function mdToHtml(text = '') {
+  if (!text) return text
+  return String(text)
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
+}
+
 /* ── Build FE response data ──────────────────────── */
 function buildResponseData(toolCallsMade, reply, sessionId) {
   const data = {
-    sessionId, reply, intent: 'chat',
+    sessionId, reply: mdToHtml(reply), intent: 'chat',
     accounts: [], mysteryBoxes: [], wheel: null,
     deposits: [], orders: [], cardPurchases: [],
     rankings: [], accountDetail: null, cardConfigs: [],
