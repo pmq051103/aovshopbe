@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { createDeposit, getDepositHistory, webhook, confirmDeposit } = require('../controllers/deposit.controller');
+const { createDeposit, getDepositHistory, webhook, confirmDeposit, rejectDeposit } = require('../controllers/deposit.controller');
 const { protect, adminOnly } = require('../middleware/authMiddleware');
 const rateLimiter = require('../middleware/rateLimiter');
 
@@ -12,7 +12,8 @@ router.get('/history', protect, getDepositHistory);
 // Đặt trước các route có :id để tránh conflict
 router.post('/webhook', express.json(), webhook);
 
-// Admin xác nhận thủ công
+// Admin xác nhận / từ chối thủ công
 router.post('/:id/confirm', protect, adminOnly, confirmDeposit);
+router.post('/:id/reject', protect, adminOnly, rejectDeposit);
 
 module.exports = router;
