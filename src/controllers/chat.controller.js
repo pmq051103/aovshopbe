@@ -11,6 +11,7 @@
 
 const prisma = require('../config/prisma')
 const logger = require('../config/logger')
+const { sanitizeRichText } = require('../utils/sanitizeRichText')
 const { searchSimilar } = require('../services/pinecone.service')
 const { TOOL_DECLARATIONS, executeTool } = require('../services/chatTools.service')
 const memStore = require('../services/chatMemory.service')
@@ -611,9 +612,12 @@ function normalizeAcc(acc) {
    sẽ hiện nguyên dấu sao. Đổi sang <strong> ở server cho chắc, bất kể model xuất gì. */
 function mdToHtml(text = '') {
   if (!text) return text
-  return String(text)
+  const html = String(text)
     .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
     .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
+  // C2: sanitize HTML do AI sinh trước khi FE render bằng dangerouslySetInnerHTML
+  // (chống XSS -> đánh cắp token localStorage). Xem chú thích ở chatbot.controller.js.
+  return sanitizeRichText(html)
 }
 
 /* ── Build FE response data ──────────────────────── */

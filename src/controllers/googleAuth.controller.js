@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const prisma = require('../config/prisma');
+const { setRefreshCookie } = require('../config/cookies');
 
 const generateTokens = (userId, role) => {
   const accessToken = jwt.sign(
@@ -114,6 +115,9 @@ const googleLogin = async (req, res) => {
       },
     });
 
+    // Refresh token đi qua httpOnly cookie thay vì trả trong body (chống XSS đánh cắp).
+    setRefreshCookie(res, refreshToken);
+
     res.json({
       success: true,
       message: 'Đăng nhập Google thành công',
@@ -129,7 +133,6 @@ const googleLogin = async (req, res) => {
           quanHuyBalance: user.quanHuyBalance,
         },
         accessToken,
-        refreshToken,
       },
     });
   } catch (error) {
@@ -137,7 +140,6 @@ const googleLogin = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Lỗi đăng nhập Google',
-      error: error.message,
     });
   }
 };

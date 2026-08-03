@@ -383,17 +383,32 @@ const buyAccount = async (req, res) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Trừ tiền user
-      const updatedUser = await tx.user.update({
-        where: { id: req.user.id },
-        data: { balance: { decrement: finalPrice }, totalSpent: { increment: finalPrice } }
-      })
-
-      // 2. Cập nhật trạng thái account
-      const updatedAccount = await tx.gameAccount.update({
-        where: { id: account.id },
+      // 1. CLAIM tài khoản NGUYÊN TỬ (C1): chỉ update được nếu status vẫn 'AVAILABLE'.
+      //    Bản cũ chỉ update theo id nên 2 request mua song song đều thành công
+      //    => bán trùng 1 acc cho 2 người + lộ user/pass game cho cả hai.
+      //    updateMany + điều kiện status = compare-and-swap: chỉ 1 request thắng.
+      const claim = await tx.gameAccount.updateMany({
+        where: { id: account.id, status: 'AVAILABLE' },
         data: { status: 'SOLD', soldAt: new Date(), soldToId: req.user.id }
       })
+      if (claim.count === 0) {
+        const err = new Error('ACCOUNT_ALREADY_SOLD')
+        err.code = 'ACCOUNT_ALREADY_SOLD'
+        throw err
+      }
+
+      // 2. Trừ tiền user NGUYÊN TỬ với guard số dư (chống trừ âm khi mua song song).
+      const pay = await tx.user.updateMany({
+        where: { id: req.user.id, balance: { gte: finalPrice } },
+        data: { balance: { decrement: finalPrice }, totalSpent: { increment: finalPrice } }
+      })
+      if (pay.count === 0) {
+        const err = new Error('INSUFFICIENT_BALANCE')
+        err.code = 'INSUFFICIENT_BALANCE'
+        throw err // rollback: acc được trả lại 'AVAILABLE' vì cả transaction hủy
+      }
+      const updatedUser = await tx.user.findUnique({ where: { id: req.user.id } })
+      const updatedAccount = await tx.gameAccount.findUnique({ where: { id: account.id } })
 
       // 3. Tạo order trước để có orderId
       const order = await tx.order.create({
@@ -426,10 +441,15 @@ const buyAccount = async (req, res) => {
 
       // 4. Cập nhật coupon & tạo CouponUsage SAU KHI có orderId
       if (coupon) {
-        await tx.coupon.update({
-          where: { id: coupon.id },
+        // Tăng usageCount NGUYÊN TỬ theo điều kiện còn lượt (M2): chống nhiều người dùng
+        // đồng thời vượt quá usageLimit toàn cục. Bản cũ increment vô điều kiện.
+        const inc = await tx.coupon.updateMany({
+          where: { id: coupon.id, usageCount: { lt: coupon.usageLimit } },
           data: { usageCount: { increment: 1 } }
         })
+        if (inc.count === 0) {
+          const err = new Error('COUPON_EXHAUSTED'); err.code = 'COUPON_EXHAUSTED'; throw err
+        }
         await tx.couponUsage.create({
           data: { couponId: coupon.id, userId: req.user.id, orderId: order.id }
         })
@@ -529,6 +549,16 @@ const buyAccount = async (req, res) => {
   } catch (e) {
     console.error('BUY ACCOUNT ERROR:', e)
 
+    if (e.code === 'ACCOUNT_ALREADY_SOLD') {
+      return res.status(409).json({ success: false, message: 'Tài khoản vừa được người khác mua, vui lòng chọn acc khác' })
+    }
+    if (e.code === 'INSUFFICIENT_BALANCE') {
+      return res.status(400).json({ success: false, message: 'Số dư không đủ' })
+    }
+    if (e.code === 'COUPON_EXHAUSTED') {
+      return res.status(400).json({ success: false, message: 'Mã giảm giá đã hết lượt sử dụng' })
+    }
+
     if (e.code === 'P2002') {
       // Phân biệt rõ unique constraint bị vi phạm ở đâu
       const target = (e.meta?.target || '').toString()
@@ -539,7 +569,7 @@ const buyAccount = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Tài khoản này vừa được mua bởi người khác, vui lòng thử lại' })
     }
 
-    res.status(500).json({ success: false, message: 'Lỗi mua tài khoản', error: e.message })
+    res.status(500).json({ success: false, message: 'Lỗi mua tài khoản' })
   }
 }
 

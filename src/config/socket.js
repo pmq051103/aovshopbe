@@ -22,7 +22,7 @@ const initSocket = (server) => {
     const token = socket.handshake.auth?.token;
     if (token) {
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
         socket.userId = decoded.id;
         socket.userRole = decoded.role;
       } catch (e) {

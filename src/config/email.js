@@ -21,7 +21,8 @@ const getSiteLogo = async () => {
 const sendMail = async ({ to, subject, html, text }) => {
   try {
     const apiKey = process.env.BREVO_API_KEY
-    console.log('[Brevo] apiKey exists:', !!apiKey, '| key prefix:', apiKey ? apiKey.substring(0, 10) : 'none')
+    // M4: KHÔNG log prefix API key (rò rỉ 1 phần secret ra log). Chỉ log tồn tại hay không.
+    logger.info(`[Brevo] apiKey configured: ${!!apiKey}`)
     if (!apiKey) {
       logger.warn('Email not configured — skipping send')
       return false
@@ -48,11 +49,10 @@ const sendMail = async ({ to, subject, html, text }) => {
     })
     const data = await res.json()
     if (!res.ok) {
-      logger.error('Email send error:', JSON.stringify(data))
-      console.error('[Brevo] Error:', JSON.stringify(data))
+      // M4: chỉ log status + messageId, KHÔNG dump full response (có thể chứa token/PII)
+      logger.error(`Email send failed: status=${res.status} code=${data?.code || 'n/a'}`)
       return false
     }
-    console.log('[Brevo] Success:', JSON.stringify(data))
     logger.info(`Email sent to ${to}: ${subject}`)
     return true
   } catch (err) {

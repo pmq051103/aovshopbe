@@ -105,13 +105,19 @@ const spin = async (req, res) => {
     );
 
     const result = await prisma.$transaction(async (tx) => {
-      let updatedUser = await tx.user.update({
-        where: { id: req.user.id },
+      // Guard số dư nguyên tử (H2): chỉ trừ khi balance >= actualSpinCost, chống quay
+      // song song đẩy số dư âm & nhận thưởng nhiều hơn tiền thật.
+      const pay = await tx.user.updateMany({
+        where: { id: req.user.id, balance: { gte: actualSpinCost } },
         data: {
           balance: { decrement: actualSpinCost },
           totalSpent: { increment: actualSpinCost }
         }
       });
+      if (pay.count === 0) {
+        const err = new Error('INSUFFICIENT_BALANCE'); err.code = 'INSUFFICIENT_BALANCE'; throw err
+      }
+      let updatedUser = await tx.user.findUnique({ where: { id: req.user.id } });
 
       let rewardValue = selectedReward.value;
 
@@ -297,10 +303,11 @@ const spin = async (req, res) => {
     });
   } catch (e) {
     console.error('spin error:', e);
-    return res.status(500).json({
-      success: false,
-      message: e.message || 'Lỗi quay'
-    });
+    if (e.code === 'INSUFFICIENT_BALANCE') {
+      return res.status(400).json({ success: false, message: 'Số dư không đủ' });
+    }
+    // Không trả e.message thô ra client (M5)
+    return res.status(500).json({ success: false, message: 'Lỗi quay' });
   }
 };
 

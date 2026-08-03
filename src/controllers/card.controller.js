@@ -27,7 +27,16 @@ const GT_BUY_PARTNER_KEY = process.env.CARD_BUY_PARTNER_KEY || ''
 const GT_BUY_WALLET_NUMBER = process.env.CARD_BUY_WALLET_NUMBER || ''
 
 const md5 = (...parts) => crypto.createHash('md5').update(parts.join('')).digest('hex')
-const genRequestId = () => `${Date.now()}${Math.floor(Math.random() * 100000)}`
+// request_id PHẢI không đoán được: bản cũ Date.now()+random(100000) dễ đoán và bị
+// trả về cho user => kẻ tấn công tự gọi /callback giả kết quả. Dùng random mật mã học.
+const genRequestId = () => `${Date.now()}${crypto.randomBytes(12).toString('hex')}`
+// So sánh chữ ký chống timing attack
+const safeEqual = (a, b) => {
+  const ba = Buffer.from(String(a || ''), 'utf8')
+  const bb = Buffer.from(String(b || ''), 'utf8')
+  if (ba.length !== bb.length) return false
+  return crypto.timingSafeEqual(ba, bb)
+}
 
 const mapDepositStatus = s =>
   s === 1 ? 'SUCCESS' : s === 2 ? 'WRONG_VALUE' : s === 3 ? 'FAILED' : s === 99 ? 'PENDING' : 'FAILED'
@@ -1199,24 +1208,20 @@ const cardCallback = async (req, res) => {
       return res.json({ status: 200 })
     }
 
+    // ── BẮT BUỘC xác thực chữ ký (H1) ──
+    // Spec nhà cung cấp: chữ ký callback = md5(partner_key + code + serial).
+    // Bản cũ chỉ kiểm tra "if (providerSign && code && serial)" => chỉ cần BỎ TRỐNG
+    // sign/code/serial là né sạch, tự cộng tiền. Giờ thiếu bất kỳ field nào hoặc sai
+    // chữ ký đều bị từ chối (không finalize). Lệnh thật vẫn được job đối soát xử lý.
     const providerSign = callback_sign || sign
-
-    if (providerSign && code && serial) {
-      const expectedSign = md5(
-        GT_PARTNER_KEY,
-        String(code).trim().replace(/[\s-]/g, ''),
-        String(serial).trim().replace(/[\s-]/g, '')
-      )
-
-      if (providerSign !== expectedSign) {
-        console.warn('[CARD CALLBACK INVALID SIGN]', {
-          providerSign,
-          expectedSign,
-          request_id,
-        })
-
-        return res.json({ status: 200 })
-      }
+    const expectedSign = md5(
+      GT_PARTNER_KEY,
+      String(code || '').trim().replace(/[\s-]/g, ''),
+      String(serial || '').trim().replace(/[\s-]/g, '')
+    )
+    if (!providerSign || !code || !serial || !safeEqual(providerSign, expectedSign)) {
+      console.warn('[CARD CALLBACK INVALID/MISSING SIGN]', { request_id, hasSign: !!providerSign })
+      return res.json({ status: 200 })
     }
 
     const viMessage = translateCardMessage(req.body.status, req.body.message, 'deposit')
@@ -1575,10 +1580,16 @@ const buyCard = async (req, res) => {
     const sign = md5(GT_BUY_PARTNER_KEY, GT_BUY_PARTNER_ID, command, requestId)
 
     const purchase = await prisma.$transaction(async tx => {
-      const updated = await tx.user.update({
-        where: { id: req.user.id },
+      // Guard số dư nguyên tử (H2): chỉ trừ khi balance >= totalPrice, chống mua song
+      // song đẩy số dư âm. Bản cũ chỉ check trước rồi decrement vô điều kiện.
+      const pay = await tx.user.updateMany({
+        where: { id: req.user.id, balance: { gte: totalPrice } },
         data: { balance: { decrement: totalPrice }, totalSpent: { increment: totalPrice } },
       })
+      if (pay.count === 0) {
+        const err = new Error('INSUFFICIENT_BALANCE'); err.code = 'INSUFFICIENT_BALANCE'; throw err
+      }
+      const updated = await tx.user.findUnique({ where: { id: req.user.id } })
 
       const p = await tx.cardPurchase.create({
         data: {
@@ -1795,10 +1806,11 @@ const buyCard = async (req, res) => {
   } catch (e) {
     console.error('[buyCard ERROR]', e)
 
-    return res.status(500).json({
-      success: false,
-      message: e.message || 'Lỗi mua thẻ',
-    })
+    if (e.code === 'INSUFFICIENT_BALANCE') {
+      return res.status(400).json({ success: false, message: 'Số dư không đủ' })
+    }
+    // Không trả e.message thô ra client (M5) — tránh lộ chi tiết nội bộ.
+    return res.status(500).json({ success: false, message: 'Lỗi mua thẻ' })
   }
 }
 

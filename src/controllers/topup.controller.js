@@ -105,23 +105,25 @@ const createOrder = async (req, res) => {
       let updatedUser
 
       if (paymentMethod === 'MONEY') {
-        updatedUser = await tx.user.update({
-          where: { id: req.user.id },
-          data: {
-            balance: {
-              decrement: pkg.price,
-            },
-          },
+        // Guard số dư nguyên tử (H2): chỉ trừ khi balance >= pkg.price
+        const pay = await tx.user.updateMany({
+          where: { id: req.user.id, balance: { gte: pkg.price } },
+          data: { balance: { decrement: pkg.price } },
         })
+        if (pay.count === 0) {
+          const err = new Error('INSUFFICIENT_BALANCE'); err.code = 'INSUFFICIENT_BALANCE'; throw err
+        }
+        updatedUser = await tx.user.findUnique({ where: { id: req.user.id } })
       } else {
-        updatedUser = await tx.user.update({
-          where: { id: req.user.id },
-          data: {
-            quanHuyBalance: {
-              decrement: pkg.quanHuyAmount,
-            },
-          },
+        // Guard số dư Quân Huy nguyên tử
+        const pay = await tx.user.updateMany({
+          where: { id: req.user.id, quanHuyBalance: { gte: pkg.quanHuyAmount } },
+          data: { quanHuyBalance: { decrement: pkg.quanHuyAmount } },
         })
+        if (pay.count === 0) {
+          const err = new Error('INSUFFICIENT_QH'); err.code = 'INSUFFICIENT_QH'; throw err
+        }
+        updatedUser = await tx.user.findUnique({ where: { id: req.user.id } })
 
         await tx.quanHuyTransaction.create({
           data: {
@@ -231,7 +233,14 @@ const createOrder = async (req, res) => {
     })
   } catch (e) {
     logger.error('createTopupOrder:', e.message)
-    res.status(500).json({ success: false, message: e.message })
+    if (e.code === 'INSUFFICIENT_BALANCE') {
+      return res.status(400).json({ success: false, message: 'Số dư tiền không đủ' })
+    }
+    if (e.code === 'INSUFFICIENT_QH') {
+      return res.status(400).json({ success: false, message: 'Số dư Quân Huy không đủ' })
+    }
+    // Không trả e.message thô ra client (M5)
+    res.status(500).json({ success: false, message: 'Lỗi tạo đơn nạp' })
   }
 }
 

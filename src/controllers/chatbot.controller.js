@@ -20,6 +20,7 @@
 
 const prisma = require('../config/prisma')
 const logger = require('../config/logger')
+const { sanitizeRichText } = require('../utils/sanitizeRichText')
 const { searchSimilar } = require('../services/pinecone.service')
 
 const PHONE_TELCOS = ['VIETTEL', 'VINAPHONE', 'MOBIFONE', 'VIETNAMOBILE', 'GMOBILE', 'REDDI']
@@ -373,9 +374,13 @@ function cleanJson(raw = '') {
 // Nếu để **...** thì trên web hiện nguyên dấu sao. Xử lý server cho chắc.
 function mdToHtml(text = '') {
   if (!text) return text
-  return String(text)
+  const html = String(text)
     .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
     .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
+  // C2: reply do LLM sinh ra (bị chi phối bởi input user qua prompt-injection) được FE
+  // render bằng dangerouslySetInnerHTML. BẮT BUỘC sanitize để loại <script>, onerror=,
+  // javascript:… trước khi trả về — nếu không, XSS => đánh cắp token trong localStorage.
+  return sanitizeRichText(html)
 }
 
 function normalizeChatLinks(text = '') {

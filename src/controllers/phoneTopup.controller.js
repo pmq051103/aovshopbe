@@ -12,7 +12,38 @@ const RC_PARTNER_ID = process.env.PHONE_TOPUP_PARTNER_ID || ''
 const RC_PARTNER_KEY = process.env.PHONE_TOPUP_PARTNER_KEY || ''
 
 const md5 = (...parts) => crypto.createHash('md5').update(parts.join('')).digest('hex')
-const genRequestId = () => `${Date.now()}${Math.floor(Math.random() * 100000)}`
+
+// requestId PHẢI không đoán được. Bản cũ dùng Date.now()+random(100000) => chỉ ~100k
+// khả năng / mili-giây và giá trị này trả về cho chính user => kẻ tấn công đoán/biết được
+// request_id của lệnh đang PENDING rồi tự gọi /callback giả 'FAILED' để được hoàn tiền (C3).
+// Dùng 16 byte ngẫu nhiên mật mã học để loại bỏ khả năng đoán.
+const genRequestId = () => `${Date.now()}${crypto.randomBytes(16).toString('hex')}`
+
+// So sánh chữ ký chống timing-attack
+const safeEqual = (a, b) => {
+  const ba = Buffer.from(String(a || ''), 'utf8')
+  const bb = Buffer.from(String(b || ''), 'utf8')
+  if (ba.length !== bb.length) return false
+  return crypto.timingSafeEqual(ba, bb)
+}
+
+// Xác thực chữ ký callback từ đối tác. BẮT BUỘC có chữ ký hợp lệ mới xử lý.
+// ⚠️ QUAN TRỌNG: công thức dưới đây phải KHỚP đúng spec của nhà cung cấp (rechargews).
+// Nếu spec khác thứ tự field, sửa lại phần md5(...) cho đúng — nhưng TUYỆT ĐỐI không
+// bỏ qua bước kiểm tra. Nếu chữ ký sai/thiếu, trả 200 nhưng KHÔNG finalize (cron/poll
+// callProviderGetStatus sẽ tự đối soát lệnh, nên không mất giao dịch thật).
+const verifyCallbackSign = (body) => {
+  if (!RC_PARTNER_KEY) return false // chưa cấu hình key => không tin callback nào
+  const provided = body.sign || body.callback_sign
+  if (!provided) return false
+  const expected = md5(
+    RC_PARTNER_KEY,
+    String(body.request_id ?? ''),
+    String(body.status ?? ''),
+    String(body.order_code ?? '')
+  )
+  return safeEqual(provided, expected)
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 // productlist của đối tác trả VỀ CHUNG cả thẻ game/dịch vụ số lẫn nạp điện thoại.
@@ -695,6 +726,16 @@ async function pollPendingOrders() {
 const phoneTopupCallback = async (req, res) => {
   try {
     console.log('[PHONE TOPUP CALLBACK RECEIVED]', req.body)
+
+    // ── C3: BẮT BUỘC xác thực chữ ký trước khi tin bất cứ field nào ──
+    if (!verifyCallbackSign(req.body)) {
+      console.warn('[PHONE TOPUP CALLBACK INVALID SIGN]', {
+        request_id: req.body?.request_id,
+        status: req.body?.status,
+      })
+      // Trả 200 để đối tác không spam retry, nhưng KHÔNG xử lý/finalize gì cả.
+      return res.json({ status: 200 })
+    }
 
     const { request_id, order_code, status, message } = req.body
     if (!request_id) {

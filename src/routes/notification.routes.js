@@ -27,7 +27,15 @@ router.put('/read-all', protect, async (req, res) => {
 
 router.put('/:id/read', protect, async (req, res) => {
   try {
-    await prisma.notification.update({ where: { id: req.params.id }, data: { isRead: true, readAt: new Date() } });
+    // M1: chỉ cho đánh dấu đã đọc notification CỦA CHÍNH user (chống IDOR). Bản cũ
+    // update chỉ theo id => user A đánh dấu đọc được notification của user B.
+    const result = await prisma.notification.updateMany({
+      where: { id: req.params.id, userId: req.user.id },
+      data: { isRead: true, readAt: new Date() }
+    });
+    if (result.count === 0) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy thông báo' });
+    }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ success: false }); }
 });

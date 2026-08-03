@@ -2,6 +2,17 @@ const prisma = require('../config/prisma')
 const { notifyLayawayOverdueAdmin, notifyLayawayReminderUser } = require('../config/email')
 const { processReferralPurchase } = require('../services/affiliate.service')
 
+// Map lỗi -> HTTP + thông báo an toàn (không leak err.message thô cho client — M5)
+const sendLayawayError = (res, err) => {
+  console.error('[Layaway ERROR]', err?.message)
+  const map = {
+    ACCOUNT_ALREADY_SOLD: [409, 'Tài khoản vừa được người khác mua'],
+    INSUFFICIENT_BALANCE: [400, 'Số dư không đủ'],
+  }
+  const [code, msg] = map[err?.code] || [500, 'Đã có lỗi xảy ra']
+  return res.status(code).json({ success: false, message: msg })
+}
+
 // ── HELPERS ────────────────────────────────────────────────────────────────────
 
 // Hoàn tất layaway - chuyển acc sang SOLD và tạo userOwnedAccount
@@ -10,14 +21,19 @@ const completeLayawayAccount = async (tx, layaway) => {
     where: { id: layaway.accountId },
   })
 
-  await tx.gameAccount.update({
-    where: { id: layaway.accountId },
+  // Claim nguyên tử (H6): chỉ chuyển SOLD nếu acc còn RESERVED/AVAILABLE, tránh trao
+  // trùng 1 acc cho nhiều người khi có luồng khác (mua thẳng/đấu giá) chạy song song.
+  const claim = await tx.gameAccount.updateMany({
+    where: { id: layaway.accountId, status: { in: ['RESERVED', 'AVAILABLE'] } },
     data: {
       status: 'SOLD',
       soldToId: layaway.userId,
       soldAt: new Date(),
     },
   })
+  if (claim.count === 0) {
+    const err = new Error('ACCOUNT_ALREADY_SOLD'); err.code = 'ACCOUNT_ALREADY_SOLD'; throw err
+  }
 
   await tx.userOwnedAccount.create({
     data: {
@@ -138,18 +154,26 @@ const createLayaway = async (req, res) => {
     const code = 'LAY' + Date.now().toString(36).toUpperCase()
 
     const layaway = await prisma.$transaction(async (tx) => {
-      await tx.gameAccount.update({
-        where: { id: accountId },
+      // Claim nguyên tử: chỉ RESERVE nếu acc còn AVAILABLE (chống 2 người cùng đặt cọc)
+      const reserve = await tx.gameAccount.updateMany({
+        where: { id: accountId, status: 'AVAILABLE' },
         data: { status: 'RESERVED' },
       })
+      if (reserve.count === 0) {
+        const err = new Error('ACCOUNT_ALREADY_SOLD'); err.code = 'ACCOUNT_ALREADY_SOLD'; throw err
+      }
 
-      await tx.user.update({
-        where: { id: userId },
+      // Guard số dư nguyên tử (H2)
+      const pay = await tx.user.updateMany({
+        where: { id: userId, balance: { gte: depositAmount } },
         data: {
           balance: { decrement: depositAmount },
           totalSpent: { increment: depositAmount },
         },
       })
+      if (pay.count === 0) {
+        const err = new Error('INSUFFICIENT_BALANCE'); err.code = 'INSUFFICIENT_BALANCE'; throw err
+      }
 
       const created = await tx.layaway.create({
         data: {
@@ -220,7 +244,7 @@ const createLayaway = async (req, res) => {
       data: layaway,
     })
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message })
+    return sendLayawayError(res, err)
   }
 }
 
@@ -262,13 +286,17 @@ const payLayaway = async (req, res) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: userId },
+      // Guard số dư nguyên tử (H2)
+      const pay = await tx.user.updateMany({
+        where: { id: userId, balance: { gte: finalAmount } },
         data: {
           balance: { decrement: finalAmount },
           totalSpent: { increment: finalAmount },
         },
       })
+      if (pay.count === 0) {
+        const err = new Error('INSUFFICIENT_BALANCE'); err.code = 'INSUFFICIENT_BALANCE'; throw err
+      }
 
       await tx.layawayPayment.create({
         data: {
@@ -334,7 +362,7 @@ const payLayaway = async (req, res) => {
       data: result,
     })
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message })
+    return sendLayawayError(res, err)
   }
 }
 
@@ -415,7 +443,7 @@ const getMyLayaways = async (req, res) => {
 
     res.json({ success: true, data })
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message })
+    return sendLayawayError(res, err)
   }
 }
 
@@ -432,7 +460,7 @@ const getLayawayDetail = async (req, res) => {
     if (!layaway) return res.status(404).json({ success: false, message: 'Không tìm thấy đơn đặt cọc' })
     res.json({ success: true, data: layaway })
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message })
+    return sendLayawayError(res, err)
   }
 }
 
@@ -475,7 +503,7 @@ const adminGetLayaways = async (req, res) => {
       data: { layaways, total, page: parseInt(page), totalPages: Math.ceil(total / limit) },
     })
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message })
+    return sendLayawayError(res, err)
   }
 }
 
@@ -541,7 +569,7 @@ const adminRecordPayment = async (req, res) => {
       data: result,
     })
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message })
+    return sendLayawayError(res, err)
   }
 }
 
@@ -567,7 +595,7 @@ const adminCancelLayaway = async (req, res) => {
 
     res.json({ success: true, message: 'Đã huỷ đơn đặt cọc' })
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message })
+    return sendLayawayError(res, err)
   }
 }
 
@@ -593,7 +621,7 @@ const adminSendReminderToUser = async (req, res) => {
 
     res.json({ success: true, message: 'Đã gửi email nhắc nhở thành công' })
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message })
+    return sendLayawayError(res, err)
   }
 }
 

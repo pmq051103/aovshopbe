@@ -4,25 +4,24 @@ const rateLimit = require('express-rate-limit');
 const createLimiter = (windowMs, max, message) =>
   rateLimit({
     windowMs,
-    max,
+    // Admin được hạn mức cao gấp 20 lần (thao tác dashboard nhiều) nhưng VẪN có trần
+    // — khác với 'skip' cũ vốn cho admin throughput vô hạn nếu token admin bị lộ.
+    max: (req) => (req.user?.role === 'ADMIN' ? max * 20 : max),
     message: { success: false, message },
     standardHeaders: true,   // trả header RateLimit-* (RFC 6585)
     legacyHeaders: false,
 
     // ⚡ Quan trọng khi deploy sau nginx/cloudflare:
-    // Đọc IP thật từ X-Forwarded-For thay vì IP của proxy
-    // Phải bật app.set('trust proxy', 1) trong server.js
-    keyGenerator: (req) => {
-      return (
-        req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-        req.ip
-      );
-    },
+    // KHÔNG tự đọc raw header 'x-forwarded-for' — client có thể tự gửi header này
+    // với giá trị bịa mỗi request => mỗi lần là 1 "bucket" mới => né SẠCH rate limit
+    // login/OTP/deposit (lỗ hổng C4). Express đã tự suy ra IP thật từ X-Forwarded-For
+    // SAU KHI bật app.set('trust proxy', 1) trong server.js và expose qua req.ip
+    // (đã loại các proxy hop tin cậy). Dùng req.ip là an toàn và không giả mạo được.
+    keyGenerator: (req) => req.ip,
 
-    // Bỏ qua rate limit cho ADMIN — admin thao tác nhiều trên dashboard
-    skip: (req) => {
-      return req.user?.role === 'ADMIN';
-    },
+    // KHÔNG miễn hoàn toàn rate limit cho ADMIN (nếu token admin bị lộ từ localStorage
+    // thì kẻ tấn công có throughput vô hạn). Cho admin hạn mức cao gấp 20 lần thay vì bỏ qua.
+    // (bỏ 'skip'; giới hạn động cho admin xử lý ở tham số max bên dưới)
   });
 
 // ─── Các giới hạn ─────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ require('dotenv').config()
 const express = require('express')
 const http = require('http')
 const cors = require('cors')
+const cookieParser = require('cookie-parser')
 const helmet = require('helmet')
 const compression = require('compression')
 const morgan = require('morgan')
@@ -62,8 +63,11 @@ app.use(cors({
   methods: ['GET','POST','PUT','DELETE','PATCH'],
   allowedHeaders: ['Content-Type','Authorization','x-refresh-token'],
 }))
-app.use(express.json({ limit: '50mb' }))
-app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+// M7: 50mb quá lớn cho JSON (mở đường DoS bộ nhớ). Hạ về 10mb — vẫn dư cho rich-text
+// kèm ảnh base64. File thật (ảnh/banner) đi qua multer/Cloudinary, không qua body JSON.
+app.use(express.json({ limit: '10mb' }))
+app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+app.use(cookieParser()) // đọc httpOnly cookie chứa refresh token (req.cookies)
 app.use(compression())
 
 if (process.env.NODE_ENV !== 'test') {

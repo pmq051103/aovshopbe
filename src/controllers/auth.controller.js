@@ -5,6 +5,7 @@ const prisma = require('../config/prisma')
 const { sendResetPasswordEmail, sendVerificationCodeEmail } = require('../config/email')
 const { createReferralOnRegister } = require('../services/affiliate.service')
 const { primaryFrontendUrl } = require('../config/allowedOrigins')
+const { setRefreshCookie, clearRefreshCookie, REFRESH_COOKIE } = require('../config/cookies')
 
 // Sinh mã xác thực 6 chữ số (OTP)
 const generateVerifyCode = () => String(Math.floor(100000 + Math.random() * 900000))
@@ -89,13 +90,17 @@ const register = async (req, res) => {
       await issueVerificationCode(user, { force: true })
     }
 
+    // Refresh token đi qua httpOnly cookie (JS không đọc được) thay vì trả trong body.
+    setRefreshCookie(res, refreshToken)
+
     res.status(201).json({
       success: true,
       message: verificationRequired ? 'Đăng ký thành công, vui lòng kiểm tra email để lấy mã xác thực' : 'Đăng ký thành công',
-      data: { user, accessToken, refreshToken },
+      data: { user, accessToken },
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Lỗi đăng ký', error: error.message });
+    console.error('[register ERROR]', error?.message)
+    res.status(500).json({ success: false, message: 'Lỗi đăng ký' });
   }
 };
 
@@ -127,8 +132,11 @@ const login = async (req, res) => {
       }
     }
 
+    // Refresh token đi qua httpOnly cookie thay vì trả trong body (chống XSS đánh cắp).
+    setRefreshCookie(res, refreshToken)
+
     const userData = { id: user.id, username: user.username, email: user.email, displayName: user.displayName, avatar: user.avatar, role: user.role, balance: user.balance, quanHuyBalance: user.quanHuyBalance, createdAt: user.createdAt, totalDeposit: user.totalDeposit, totalSpent: user.totalSpent, emailVerified: user.emailVerified };
-    res.json({ success: true, message: 'Đăng nhập thành công', data: { user: userData, accessToken, refreshToken, needsVerification } });
+    res.json({ success: true, message: 'Đăng nhập thành công', data: { user: userData, accessToken, needsVerification } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi đăng nhập' });
   }
@@ -136,21 +144,28 @@ const login = async (req, res) => {
 
 const refreshToken = async (req, res) => {
   try {
-    const { refreshToken: token } = req.body;
+    // Ưu tiên đọc từ httpOnly cookie; fallback body chỉ để tương thích client cũ trong
+    // giai đoạn chuyển tiếp (có thể bỏ hẳn sau khi mọi client đã cập nhật).
+    const token = req.cookies?.[REFRESH_COOKIE] || req.body?.refreshToken;
     if (!token) return res.status(401).json({ success: false, message: 'Không có refresh token' });
 
-    const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET, { algorithms: ['HS256'] });
     const user = await prisma.user.findUnique({ where: { id: decoded.id } });
 
     if (!user || user.refreshToken !== token) {
+      clearRefreshCookie(res);
       return res.status(401).json({ success: false, message: 'Refresh token không hợp lệ' });
     }
 
     const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.role);
     await prisma.user.update({ where: { id: user.id }, data: { refreshToken: newRefreshToken } });
 
-    res.json({ success: true, data: { accessToken, refreshToken: newRefreshToken } });
+    // Xoay refresh token và ghi lại vào cookie; KHÔNG trả refresh token trong body nữa.
+    setRefreshCookie(res, newRefreshToken);
+
+    res.json({ success: true, data: { accessToken } });
   } catch (error) {
+    clearRefreshCookie(res);
     res.status(401).json({ success: false, message: 'Token không hợp lệ hoặc đã hết hạn' });
   }
 };
@@ -158,8 +173,10 @@ const refreshToken = async (req, res) => {
 const logout = async (req, res) => {
   try {
     await prisma.user.update({ where: { id: req.user.id }, data: { refreshToken: null } });
+    clearRefreshCookie(res);
     res.json({ success: true, message: 'Đăng xuất thành công' });
   } catch (error) {
+    clearRefreshCookie(res);
     res.status(500).json({ success: false, message: 'Lỗi đăng xuất' });
   }
 };
@@ -226,7 +243,6 @@ const forgotPassword = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Lỗi gửi email',
-      error: error.message,
     })
   }
 }
