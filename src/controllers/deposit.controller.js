@@ -318,9 +318,51 @@ const confirmDeposit = async (req, res) => {
   }
 };
 
+// Admin từ chối lệnh nạp tiền thủ công (VD: không thấy tiền về, chuyển sai nội dung...)
+// Không cộng tiền, không tạo Transaction — chỉ chuyển status sang FAILED và báo cho user.
+const rejectDeposit = async (req, res) => {
+  try {
+    const { reason } = req.body;
+
+    const deposit = await prisma.deposit.findUnique({
+      where: { id: req.params.id },
+      include: { user: true }
+    });
+    if (!deposit) return res.status(404).json({ success: false, message: 'Không tìm thấy' });
+    if (deposit.status !== 'PENDING') return res.status(400).json({ success: false, message: 'Lệnh đã được xử lý' });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.deposit.update({
+        where: { id: deposit.id },
+        data: { status: 'FAILED' }
+      });
+
+      await tx.notification.create({
+        data: {
+          userId: deposit.userId,
+          type: 'DEPOSIT',
+          title: 'Lệnh nạp tiền bị từ chối',
+          message: reason
+            ? `Lệnh nạp ${parseInt(deposit.amount).toLocaleString('vi-VN')}đ đã bị từ chối: ${reason}`
+            : `Lệnh nạp ${parseInt(deposit.amount).toLocaleString('vi-VN')}đ đã bị từ chối. Vui lòng liên hệ hỗ trợ nếu bạn đã chuyển khoản.`,
+          data: { depositId: deposit.id, amount: deposit.amount, reason: reason || '' }
+        }
+      });
+    });
+
+    emitToUser(deposit.userId, 'deposit:failed', { amount: deposit.amount, reason: reason || '' });
+    emitToAdmins('admin:deposit_update', { depositId: deposit.id, userId: deposit.userId, amount: deposit.amount, status: 'FAILED' });
+
+    res.json({ success: true, message: 'Đã từ chối lệnh nạp tiền' });
+  } catch (error) {
+    console.error('rejectDeposit error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi từ chối lệnh nạp tiền' });
+  }
+};
+
 const getWeek = (date) => {
   const onejan = new Date(date.getFullYear(), 0, 1);
   return Math.ceil((((date - onejan) / 86400000) + onejan.getDay() + 1) / 7);
 };
 
-module.exports = { createDeposit, getDepositHistory, webhook, confirmDeposit };
+module.exports = { createDeposit, getDepositHistory, webhook, confirmDeposit, rejectDeposit };
