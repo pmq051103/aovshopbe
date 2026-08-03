@@ -2,7 +2,6 @@ require('dotenv').config()
 const express = require('express')
 const http = require('http')
 const cors = require('cors')
-const cookieParser = require('cookie-parser')
 const helmet = require('helmet')
 const compression = require('compression')
 const morgan = require('morgan')
@@ -67,7 +66,22 @@ app.use(cors({
 // kèm ảnh base64. File thật (ảnh/banner) đi qua multer/Cloudinary, không qua body JSON.
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
-app.use(cookieParser()) // đọc httpOnly cookie chứa refresh token (req.cookies)
+// Parse cookie header -> req.cookies (tự viết, KHÔNG cần dependency cookie-parser
+// để tránh lỗi thiếu module khi deploy). res.cookie/res.clearCookie là hàm sẵn của Express.
+app.use((req, _res, next) => {
+  const header = req.headers.cookie
+  req.cookies = {}
+  if (header) {
+    for (const part of header.split(';')) {
+      const idx = part.indexOf('=')
+      if (idx > -1) {
+        const k = part.slice(0, idx).trim()
+        if (k) req.cookies[k] = decodeURIComponent(part.slice(idx + 1).trim())
+      }
+    }
+  }
+  next()
+})
 app.use(compression())
 
 if (process.env.NODE_ENV !== 'test') {
