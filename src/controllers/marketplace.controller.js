@@ -368,13 +368,19 @@ const buyListing = async (req, res) => {
       const feeAmount = Math.round(price * (parseFloat(listing.feePercent) / 100))
       const sellerReceive = price - feeAmount
 
-      const updatedBuyer = await tx.user.update({
-        where: { id: buyerId },
+      // Trừ tiền người mua NGUYÊN TỬ (guard số dư, chống mua song song đẩy âm)
+      const paid = await tx.user.updateMany({
+        where: { id: buyerId, balance: { gte: price } },
         data: { balance: { decrement: price }, totalSpent: { increment: price } },
       })
+      if (paid.count === 0) throw Object.assign(new Error('Số dư không đủ'), { code: 400 })
+      const updatedBuyer = await tx.user.findUnique({ where: { id: buyerId } })
+
+      // Người bán nhận tiền vào SỐ DƯ BÁN ACC (sellerBalance) — TÁCH RIÊNG số dư shop,
+      // chỉ dùng để rút về ngân hàng, không tiêu trong shop => chống cash-out tiền nạp.
       const updatedSeller = await tx.user.update({
         where: { id: listing.sellerId },
-        data: { balance: { increment: sellerReceive } },
+        data: { sellerBalance: { increment: sellerReceive } },
       })
 
       await tx.transaction.createMany({
@@ -386,8 +392,8 @@ const buyListing = async (req, res) => {
           },
           {
             userId: listing.sellerId, type: 'MARKETPLACE_SALE', amount: sellerReceive,
-            balanceBefore: parseFloat(updatedSeller.balance) - sellerReceive, balanceAfter: parseFloat(updatedSeller.balance),
-            description: `Bán "${listing.title}" trên chợ trao đổi (đã trừ phí ${listing.feePercent}%: ${feeAmount.toLocaleString('vi-VN')}đ)`,
+            balanceBefore: parseFloat(updatedSeller.sellerBalance) - sellerReceive, balanceAfter: parseFloat(updatedSeller.sellerBalance),
+            description: `Bán "${listing.title}" trên chợ trao đổi (đã trừ phí ${listing.feePercent}%: ${feeAmount.toLocaleString('vi-VN')}đ) — cộng vào số dư bán acc`,
             referenceId: listing.id,
           },
         ],
@@ -405,10 +411,13 @@ const buyListing = async (req, res) => {
         },
       })
 
-      const updatedListing = await tx.marketplaceListing.update({
-        where: { id },
+      // Claim nguyên tử: chỉ chuyển SOLD nếu tin còn APPROVED (chống 2 người mua cùng lúc)
+      const claim = await tx.marketplaceListing.updateMany({
+        where: { id, status: 'APPROVED' },
         data: { status: 'SOLD', buyerId, soldAt: new Date() },
       })
+      if (claim.count === 0) throw Object.assign(new Error('Tin đăng vừa được mua hoặc đã huỷ'), { code: 409 })
+      const updatedListing = await tx.marketplaceListing.findUnique({ where: { id } })
 
       await tx.notification.createMany({
         data: [

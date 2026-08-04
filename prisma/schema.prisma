@@ -71,6 +71,13 @@ model User {
   sellerTierUpdatedAt DateTime?
   sellerTierUpdatedBy String?
 
+  // ── Số dư TIỀN BÁN ACC (tách riêng số dư shop) — chỉ dùng để RÚT, không tiêu shop ──
+  sellerBalance       Decimal    @default(0.00) @db.Decimal(15, 2) // tiền kiếm được từ bán acc trên chợ (sau phí sàn)
+  payoutBankName      String?    @db.VarChar(100) // ngân hàng/ví nhận tiền rút
+  payoutBankNumber    String?    @db.VarChar(50)  // số tài khoản / số ví
+  payoutBankHolder    String?    @db.VarChar(100) // tên chủ tài khoản
+  withdrawalRequests  WithdrawalRequest[]
+
   badges              UserBadge[]
   auctionBids         AuctionBid[]
   auctionRoomsWon     AuctionRoom[]        @relation("AuctionWinner")
@@ -755,6 +762,7 @@ enum NotificationType {
   AFFILIATE_COMMISSION
   AUCTION
   MARKETPLACE
+  WITHDRAWAL
 }
 
 enum OrderStatus {
@@ -1576,4 +1584,33 @@ enum MarketplaceListingStatus {
   REJECTED    // admin từ chối
   SOLD        // đã bán
   CANCELLED   // người bán tự huỷ (khi còn PENDING/APPROVED)
+}
+// ── Yêu cầu RÚT TIỀN từ số dư bán acc (sellerBalance) ─────────────────────────
+model WithdrawalRequest {
+  id                String            @id @default(uuid())
+  userId            String
+  amount            Decimal           @db.Decimal(15, 2)      // số tiền rút (đã trừ giữ chỗ khỏi sellerBalance khi tạo)
+  // snapshot thông tin nhận tiền tại thời điểm yêu cầu (phòng khi user đổi sau này)
+  bankName          String            @db.VarChar(100)
+  bankNumber        String            @db.VarChar(50)
+  bankHolder        String            @db.VarChar(100)
+  status            WithdrawalStatus  @default(PENDING)
+  adminNote         String?           @db.VarChar(255)        // ghi chú admin (mã giao dịch CK / lý do từ chối)
+  processedBy       String?                                   // userId admin xử lý
+  processedAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  user              User              @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("withdrawal_requests")
+}
+
+enum WithdrawalStatus {
+  PENDING    // chờ admin xử lý
+  PAID       // admin đã chuyển khoản
+  REJECTED   // admin từ chối -> hoàn tiền lại sellerBalance
+  CANCELLED  // user tự huỷ khi còn PENDING -> hoàn tiền lại sellerBalance
 }

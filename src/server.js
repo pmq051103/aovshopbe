@@ -42,6 +42,7 @@ const profileRoutes = require('./routes/profile.routes')
 const badgeRoutes = require('./routes/badge.routes')
 const auctionRoutes = require('./routes/auction.routes')
 const marketplaceRoutes = require('./routes/marketplace.routes')
+const withdrawalRoutes = require('./routes/withdrawal.routes')
 const phoneTopupRoutes = require('./routes/phoneTopup.routes')
 
 const { isOriginAllowed } = require('./config/allowedOrigins')
@@ -175,6 +176,7 @@ app.use('/api/profile', profileRoutes)
 app.use('/api/badges', badgeRoutes)
 app.use('/api/auctions', auctionRoutes)
 app.use('/api/marketplace', marketplaceRoutes)
+app.use('/api/withdrawals', withdrawalRoutes)
 
 
 app.use(notFound)
