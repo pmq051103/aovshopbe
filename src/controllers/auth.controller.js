@@ -135,7 +135,7 @@ const login = async (req, res) => {
     // Refresh token đi qua httpOnly cookie thay vì trả trong body (chống XSS đánh cắp).
     setRefreshCookie(res, refreshToken)
 
-    const userData = { id: user.id, username: user.username, email: user.email, displayName: user.displayName, avatar: user.avatar, role: user.role, balance: user.balance, quanHuyBalance: user.quanHuyBalance, createdAt: user.createdAt, totalDeposit: user.totalDeposit, totalSpent: user.totalSpent, emailVerified: user.emailVerified };
+    const userData = { id: user.id, username: user.username, email: user.email, displayName: user.displayName, avatar: user.avatar, role: user.role, balance: user.balance, quanHuyBalance: user.quanHuyBalance, createdAt: user.createdAt, totalDeposit: user.totalDeposit, totalSpent: user.totalSpent, emailVerified: user.emailVerified, sellerTier: user.sellerTier, sellerBalance: user.sellerBalance };
     res.json({ success: true, message: 'Đăng nhập thành công', data: { user: userData, accessToken, needsVerification } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi đăng nhập' });

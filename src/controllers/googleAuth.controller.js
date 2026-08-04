@@ -131,6 +131,8 @@ const googleLogin = async (req, res) => {
           role: user.role,
           balance: user.balance,
           quanHuyBalance: user.quanHuyBalance,
+          sellerTier: user.sellerTier,
+          sellerBalance: user.sellerBalance,
         },
         accessToken,
       },
