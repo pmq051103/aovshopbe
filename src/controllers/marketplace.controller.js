@@ -432,12 +432,16 @@ const buyListing = async (req, res) => {
         ],
       })
 
-      return { listing: updatedListing, newOwned, sellerId: listing.sellerId }
+      return { listing: updatedListing, newOwned, sellerId: listing.sellerId, title: listing.title, price, sellerReceive }
     })
 
     emitToUser(buyerId, 'balance:update', {})
     emitToUser(result.sellerId, 'balance:update', {})
-    emitToUser(result.sellerId, 'notification', { type: 'MARKETPLACE', title: 'Đã bán thành công!' })
+    emitToUser(result.sellerId, 'notification', {
+      type: 'MARKETPLACE',
+      title: '💰 Bán acc thành công!',
+      message: `"${result.title}" đã bán với giá ${Number(result.price).toLocaleString('vi-VN')}đ — bạn nhận ${Number(result.sellerReceive).toLocaleString('vi-VN')}đ (đã trừ phí sàn).`,
+    })
 
     res.json({ success: true, data: result.listing, message: 'Mua tài khoản thành công' })
   } catch (e) {
