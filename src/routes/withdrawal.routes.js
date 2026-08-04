@@ -10,6 +10,8 @@ router.post('/', protect, ctrl.createWithdrawal)            // tạo yêu cầu 
 router.post('/:id/cancel', protect, ctrl.cancelWithdrawal)  // huỷ yêu cầu khi còn chờ
 
 // ── ADMIN ───────────────────────────────────────────────────────────────────
+router.get('/admin/settings', protect, adminOnly, ctrl.adminGetSettings)
+router.put('/admin/settings', protect, adminOnly, ctrl.adminUpdateSettings)
 router.get('/admin', protect, adminOnly, ctrl.adminListWithdrawals)
 router.put('/admin/:id/process', protect, adminOnly, ctrl.adminProcessWithdrawal)
 

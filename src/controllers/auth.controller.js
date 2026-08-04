@@ -185,7 +185,7 @@ const getMe = async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { id: true, username: true, email: true, displayName: true, avatar: true, role: true, balance: true, totalDeposit: true, totalSpent: true, createdAt: true, lastLogin: true, emailVerified: true, quanHuyBalance: true}
+      select: { id: true, username: true, email: true, displayName: true, avatar: true, role: true, balance: true, totalDeposit: true, totalSpent: true, createdAt: true, lastLogin: true, emailVerified: true, quanHuyBalance: true, sellerTier: true, sellerBalance: true}
     });
     res.json({ success: true, data: user });
   } catch (error) {

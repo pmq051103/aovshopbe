@@ -11,6 +11,16 @@ const getMinWithdraw = async () => {
   } catch { return DEFAULT_MIN_WITHDRAW }
 }
 
+// Số tiền rút TỐI ĐA mỗi lần — chỉnh qua SiteConfig 'withdraw_max_amount'. 0 = không giới hạn.
+const DEFAULT_MAX_WITHDRAW = 0
+const getMaxWithdraw = async () => {
+  try {
+    const cfg = await prisma.siteConfig.findUnique({ where: { key: 'withdraw_max_amount' } })
+    const v = parseFloat(cfg?.value)
+    return Number.isFinite(v) && v > 0 ? v : DEFAULT_MAX_WITHDRAW
+  } catch { return DEFAULT_MAX_WITHDRAW }
+}
+
 // ── USER: lưu / cập nhật thông tin ngân hàng nhận tiền rút ──────────────────
 const updateBankInfo = async (req, res) => {
   try {
@@ -36,13 +46,14 @@ const updateBankInfo = async (req, res) => {
 // ── USER: số dư bán acc + thông tin bank + lịch sử rút + hạn mức tối thiểu ───
 const getMyWithdrawInfo = async (req, res) => {
   try {
-    const [user, withdrawals, minWithdraw] = await Promise.all([
+    const [user, withdrawals, minWithdraw, maxWithdraw] = await Promise.all([
       prisma.user.findUnique({
         where: { id: req.user.id },
         select: { sellerBalance: true, payoutBankName: true, payoutBankNumber: true, payoutBankHolder: true },
       }),
       prisma.withdrawalRequest.findMany({ where: { userId: req.user.id }, orderBy: { createdAt: 'desc' }, take: 100 }),
       getMinWithdraw(),
+      getMaxWithdraw(),
     ])
     res.json({
       success: true,
@@ -51,6 +62,7 @@ const getMyWithdrawInfo = async (req, res) => {
         bank: { bankName: user.payoutBankName, bankNumber: user.payoutBankNumber, bankHolder: user.payoutBankHolder },
         withdrawals,
         minWithdraw,
+        maxWithdraw,
       },
     })
   } catch (e) {
@@ -66,9 +78,12 @@ const createWithdrawal = async (req, res) => {
     if (!Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Số tiền không hợp lệ' })
     }
-    const minWithdraw = await getMinWithdraw()
+    const [minWithdraw, maxWithdraw] = await Promise.all([getMinWithdraw(), getMaxWithdraw()])
     if (amount < minWithdraw) {
       return res.status(400).json({ success: false, message: `Số tiền rút tối thiểu ${minWithdraw.toLocaleString('vi-VN')}đ` })
+    }
+    if (maxWithdraw > 0 && amount > maxWithdraw) {
+      return res.status(400).json({ success: false, message: `Số tiền rút tối đa mỗi lần ${maxWithdraw.toLocaleString('vi-VN')}đ` })
     }
 
     const user = await prisma.user.findUnique({
@@ -196,12 +211,54 @@ const adminProcessWithdrawal = async (req, res) => {
   }
 }
 
+// ── ADMIN: đọc / lưu cấu hình rút tiền (tối thiểu, tối đa) ───────────────────
+const adminGetSettings = async (req, res) => {
+  try {
+    res.json({ success: true, data: { minWithdraw: await getMinWithdraw(), maxWithdraw: await getMaxWithdraw() } })
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Lỗi tải cấu hình' })
+  }
+}
+
+const adminUpdateSettings = async (req, res) => {
+  try {
+    const { minWithdraw, maxWithdraw } = req.body
+    const ops = []
+    if (minWithdraw !== undefined) {
+      const v = Math.floor(Number(minWithdraw))
+      if (!Number.isFinite(v) || v < 0) return res.status(400).json({ success: false, message: 'Số tiền tối thiểu không hợp lệ' })
+      ops.push(prisma.siteConfig.upsert({
+        where: { key: 'withdraw_min_amount' },
+        update: { value: String(v) },
+        create: { key: 'withdraw_min_amount', value: String(v), group: 'withdrawal' },
+      }))
+    }
+    if (maxWithdraw !== undefined) {
+      const v = Math.floor(Number(maxWithdraw))
+      if (!Number.isFinite(v) || v < 0) return res.status(400).json({ success: false, message: 'Số tiền tối đa không hợp lệ (0 = không giới hạn)' })
+      ops.push(prisma.siteConfig.upsert({
+        where: { key: 'withdraw_max_amount' },
+        update: { value: String(v) },
+        create: { key: 'withdraw_max_amount', value: String(v), group: 'withdrawal' },
+      }))
+    }
+    await Promise.all(ops)
+    res.json({ success: true, message: 'Đã lưu cấu hình rút tiền', data: { minWithdraw: await getMinWithdraw(), maxWithdraw: await getMaxWithdraw() } })
+  } catch (e) {
+    console.error('[adminUpdateSettings]', e.message)
+    res.status(500).json({ success: false, message: 'Lỗi lưu cấu hình' })
+  }
+}
+
 module.exports = {
   getMinWithdraw,
+  getMaxWithdraw,
   updateBankInfo,
   getMyWithdrawInfo,
   createWithdrawal,
   cancelWithdrawal,
   adminListWithdrawals,
   adminProcessWithdrawal,
+  adminGetSettings,
+  adminUpdateSettings,
 }
