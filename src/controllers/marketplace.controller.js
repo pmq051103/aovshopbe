@@ -423,7 +423,7 @@ const buyListing = async (req, res) => {
         data: [
           {
             userId: listing.sellerId, type: 'MARKETPLACE', title: 'Đã bán thành công!',
-            message: `"${listing.title}" đã được mua với giá ${price.toLocaleString('vi-VN')}đ. Bạn nhận ${sellerReceive.toLocaleString('vi-VN')}đ sau phí sàn.`,
+            message: `"${listing.title}" đã được mua với giá ${price.toLocaleString('vi-VN')}đ. Bạn nhận ${sellerReceive.toLocaleString('vi-VN')}đ sau phí sàn. Xem số dư bán acc ở trang Cá nhân, và rút tiền tại mục "Rút tiền bán acc".`,
           },
           {
             userId: buyerId, type: 'MARKETPLACE', title: 'Mua tài khoản thành công!',
@@ -440,7 +440,7 @@ const buyListing = async (req, res) => {
     emitToUser(result.sellerId, 'notification', {
       type: 'MARKETPLACE',
       title: '💰 Bán acc thành công!',
-      message: `"${result.title}" đã bán với giá ${Number(result.price).toLocaleString('vi-VN')}đ — bạn nhận ${Number(result.sellerReceive).toLocaleString('vi-VN')}đ (đã trừ phí sàn).`,
+      message: `"${result.title}" đã bán với giá ${Number(result.price).toLocaleString('vi-VN')}đ — bạn nhận ${Number(result.sellerReceive).toLocaleString('vi-VN')}đ (đã trừ phí sàn). Xem số dư bán acc ở trang Cá nhân.`,
     })
 
     res.json({ success: true, data: result.listing, message: 'Mua tài khoản thành công' })
