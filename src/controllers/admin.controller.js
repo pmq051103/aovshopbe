@@ -93,6 +93,8 @@ const getDashboardStats = async (req, res) => {
       topupOrdersToday,
       totalCardDeposits,
       cardDepositsToday,
+      totalCardPurchases,
+      cardPurchasesToday,
 
       // ── Danh sách gần đây ─────────────────────────────────────────────
       recentTransactions,
@@ -211,6 +213,9 @@ const getDashboardStats = async (req, res) => {
       prisma.gameTopupOrder.count({ where: { status: 'COMPLETED', createdAt: { gte: startOfDay } } }).catch(() => 0),
       prisma.cardDeposit.count({ where: { status: 'SUCCESS' } }).catch(() => 0),
       prisma.cardDeposit.count({ where: { status: 'SUCCESS', createdAt: { gte: startOfDay } } }).catch(() => 0),
+      // Mua thẻ (softcard) — số đơn mua thành công
+      prisma.cardPurchase.count({ where: { status: 'SUCCESS' } }).catch(() => 0),
+      prisma.cardPurchase.count({ where: { status: 'SUCCESS', createdAt: { gte: startOfDay } } }).catch(() => 0),
 
       // Danh sách gần đây
       prisma.transaction.findMany({
@@ -370,6 +375,10 @@ const getDashboardStats = async (req, res) => {
           card: {
             totalDeposits: totalCardDeposits,
             depositsToday: cardDepositsToday
+          },
+          cardPurchase: {
+            totalPurchases: totalCardPurchases,
+            purchasesToday: cardPurchasesToday
           }
         },
 
