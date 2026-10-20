@@ -406,7 +406,7 @@ const getUsers = async (req, res) => {
       prisma.user.findMany({
         where, skip: (parseInt(page) - 1) * parseInt(limit), take: parseInt(limit),
         orderBy: { createdAt: 'desc' },
-        select: { id: true, username: true, email: true, displayName: true, avatar: true, role: true, balance: true, totalDeposit: true, totalSpent: true, isActive: true, isBanned: true, banReason: true, createdAt: true, lastLogin: true, loginCount: true }
+        select: { id: true, username: true, email: true, displayName: true, avatar: true, role: true, balance: true, quanHuyBalance: true, totalDeposit: true, totalSpent: true, isActive: true, isBanned: true, banReason: true, createdAt: true, lastLogin: true, loginCount: true }
       }),
       prisma.user.count({ where })
     ]);
@@ -462,6 +462,77 @@ const adjustBalance = async (req, res) => {
     res.json({ success: true, message: 'Điều chỉnh số dư thành công', data: { newBalance } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi điều chỉnh số dư' });
+  }
+};
+
+const adjustQuanHuy = async (req, res) => {
+  try {
+    const { amount, description } = req.body;
+    const delta = Number(amount);
+
+    if (!Number.isInteger(delta) || delta === 0) {
+      return res.status(400).json({ success: false, message: 'Số Quân Huy phải là số nguyên khác 0' });
+    }
+    if (Math.abs(delta) > 1000000000) {
+      return res.status(400).json({ success: false, message: 'Số Quân Huy điều chỉnh quá lớn' });
+    }
+
+    const reason = typeof description === 'string' ? description.trim().slice(0, 400) : '';
+
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: req.params.id },
+        select: { id: true, quanHuyBalance: true },
+      });
+      if (!user) {
+        const err = new Error('NOT_FOUND');
+        err.code = 'NOT_FOUND';
+        throw err;
+      }
+
+      // Khi trừ: chỉ trừ nếu số dư còn đủ (điều kiện nằm trong câu UPDATE nên an toàn khi 2 request chạy song song)
+      const updated = await tx.user.updateMany({
+        where: delta < 0 ? { id: user.id, quanHuyBalance: { gte: -delta } } : { id: user.id },
+        data: { quanHuyBalance: { increment: delta } },
+      });
+      if (updated.count === 0) {
+        const err = new Error('INSUFFICIENT');
+        err.code = 'INSUFFICIENT';
+        throw err;
+      }
+
+      const fresh = await tx.user.findUnique({
+        where: { id: user.id },
+        select: { quanHuyBalance: true },
+      });
+      const balanceAfter = fresh.quanHuyBalance;
+      const balanceBefore = balanceAfter - delta;
+
+      await tx.quanHuyTransaction.create({
+        data: {
+          userId: user.id,
+          amount: delta,
+          balanceBefore,
+          balanceAfter,
+          type: 'ADMIN_ADJUST',
+          description: (reason || `Admin điều chỉnh Quân Huy: ${delta > 0 ? '+' : ''}${delta}`).slice(0, 500),
+          referenceId: req.user?.id || null,
+        },
+      });
+
+      return { balanceBefore, balanceAfter };
+    });
+
+    res.json({
+      success: true,
+      message: 'Điều chỉnh Quân Huy thành công',
+      data: { newQuanHuyBalance: result.balanceAfter, balanceBefore: result.balanceBefore },
+    });
+  } catch (error) {
+    if (error.code === 'NOT_FOUND') return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng' });
+    if (error.code === 'INSUFFICIENT') return res.status(400).json({ success: false, message: 'Số Quân Huy của người dùng không đủ để trừ' });
+    console.error('[Admin] adjustQuanHuy error:', error.message);
+    res.status(500).json({ success: false, message: 'Lỗi điều chỉnh Quân Huy' });
   }
 };
 
@@ -532,7 +603,7 @@ const getUserActivity = async (req, res) => {
       where: { id },
       select: {
         id: true, username: true, email: true, displayName: true, avatar: true,
-        role: true, balance: true, totalDeposit: true, totalSpent: true,
+        role: true, balance: true, quanHuyBalance: true, totalDeposit: true, totalSpent: true,
         isActive: true, isBanned: true, banReason: true, createdAt: true,
         lastLogin: true, loginCount: true
       }
@@ -595,4 +666,4 @@ const getUserActivity = async (req, res) => {
   }
 }
 
-module.exports = { getDashboardStats, getUsers, banUser, unbanUser, adjustBalance, getAllDeposits, getBadgeCounts, getUserActivity };
+module.exports = { getDashboardStats, getUsers, banUser, unbanUser, adjustBalance, adjustQuanHuy, getAllDeposits, getBadgeCounts, getUserActivity };
